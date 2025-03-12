@@ -17,6 +17,10 @@ file(GLOB LAPIS_GIS_SOURCES
 	${CMAKE_SOURCE_DIR}/src/*.hpp
 	${CMAKE_SOURCE_DIR}/src/*.cpp)
 
+file(GLOB LAPIS_GIS_TEST_SOURCES
+	${CMAKE_SOURCE_DIR}/src/test/*.hpp
+	${CMAKE_SOURCE_DIR}/src/test/*.cpp)
+
 #not using add_subdirectory here because lazperf generates a very annoying number of targets
 file(GLOB_RECURSE LAZPERF_FILES 
 	${CMAKE_SOURCE_DIR}/src/lazperf/cpp/lazperf/*.cpp
@@ -48,11 +52,31 @@ set(LAPISGIS_EXTERNAL_INCLUDES
 	${CMAKE_SOURCE_DIR}/src/whereami
 	)
 
+set(LAPISGIS_EXTERNAL_LINKS
+	${GDAL_LIBRARIES}
+	${Boost_LIBRARIES}
+	${GeoTIFF_LIBRARIES}
+	${PROJ_LIBRARIES}
+	lazperf
+	whereami
+	)
+
 target_include_directories(Lapis_gis PRIVATE ${LAPISGIS_EXTERNAL_INCLUDES})
 target_precompile_headers(Lapis_gis PRIVATE ${CMAKE_SOURCE_DIR}/src/gis_pch.hpp)
 
+add_compile_definitions(LAPISTESTFILES="${CMAKE_SOURCE_DIR}/src/test/testfiles/")
+add_executable(Lapis_gis_test ${LAPIS_GIS_TEST_SOURCES})
+find_package(GTest REQUIRED)
+target_include_directories(Lapis_gis_test PRIVATE ${LAPISGIS_EXTERNAL_INCLUDES})
+target_link_libraries(Lapis_gis_test PRIVATE ${LAPISGIS_EXTERNAL_LINKS})
+target_link_libraries(Lapis_gis_test PRIVATE Lapis_gis)
+target_include_directories(Lapis_gis_test PRIVATE ${GTEST_INCLUDE_DIRS})
+target_link_libraries(Lapis_gis_test PRIVATE ${GTEST_BOTH_LIBRARIES})
+
 if (MSVC)
 	target_compile_options(Lapis_gis PRIVATE /W3 /WX)
+	target_compile_options(Lapis_gis_test PRIVATE /W3 /WX)
 else()
 	target_compile_options(Lapis_gis PRIVATE -Wall -Wextra -Werror)
+	target_compile_options(Lapis_gis_test PRIVATE -Wall -Wextra -Werror)
 endif()

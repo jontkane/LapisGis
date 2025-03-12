@@ -62,5 +62,6 @@
 
 //whereami
 #include<whereami.h>
+#define WHERAMI_H
 
 #endif

@@ -16,7 +16,7 @@ namespace lapis {
 
 	class ProjContextByThread {
 	private:
-		static std::unordered_map<std::thread::id, SharedPJCtx> _ctxs;
+		inline static std::unordered_map<std::thread::id, SharedPJCtx> _ctxs;
 		static bool set_proj_db_for_null_context;
 	public:
 		static PJ_CONTEXT* get();
