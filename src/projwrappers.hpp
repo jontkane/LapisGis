@@ -3,7 +3,7 @@
 #define lapid_projwrappers_h
 
 #include"gis_pch.hpp"
-#include"..\LapisTypeDefs.hpp"
+#include"LapisGisTypeDefs.hpp"
 
 
 namespace lapis {

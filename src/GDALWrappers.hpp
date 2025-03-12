@@ -2,7 +2,7 @@
 #ifndef lapis_gdalwrappers_h
 #define lapis_gdalwrappers_h
 
-#include"..\LapisTypeDefs.hpp"
+#include"LapisGisTypeDefs.hpp"
 #include"LasIO.hpp"
 #include"gis_pch.hpp"
 
