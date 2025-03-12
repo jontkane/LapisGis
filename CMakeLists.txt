@@ -22,9 +22,15 @@ file(GLOB_RECURSE LAZPERF_FILES
 	${CMAKE_SOURCE_DIR}/src/lazperf/cpp/lazperf/*.cpp
 	${CMAKE_SOURCE_DIR}/src/lazperf/cpp/lazperf/*.hpp
 )
-add_library(lazperf STATIC ${LAZPERF_FILES})
+
+
+file(GLOB WHEREAMI_SOURCES
+	${CMAKE_SOURCE_DIR}/src/whereami/*.h
+	${CMAKE_SOURCE_DIR}/src/whereami/*.c)
 
 add_library(Lapis_gis STATIC ${LAPIS_GIS_SOURCES})
+add_library(lazperf STATIC ${LAZPERF_FILES})
+add_library(whereami STATIC ${WHEREAMI_SOURCES})
 
 find_package(GDAL REQUIRED)
 find_package(Boost COMPONENTS program_options REQUIRED)
@@ -39,6 +45,7 @@ set(LAPISGIS_EXTERNAL_INCLUDES
 	${PROJ_INCLUDE_DIR}
 	${xtl_INCLUDE_DIR}
 	${CMAKE_SOURCE_DIR}/src/lazperf/cpp
+	${CMAKE_SOURCE_DIR}/src/whereami
 	)
 
 target_include_directories(Lapis_gis PRIVATE ${LAPISGIS_EXTERNAL_INCLUDES})

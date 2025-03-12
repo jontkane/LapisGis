@@ -2,7 +2,7 @@
 #ifndef LP_COORDINATE_H
 #define LP_COORDINATE_H
 
-#include"..\LapisTypeDefs.hpp"
+#include"LapisGisTypeDefs.hpp"
 
 namespace lapis {
 	struct CoordXY {

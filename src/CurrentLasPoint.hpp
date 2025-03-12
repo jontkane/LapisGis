@@ -3,7 +3,7 @@
 #define lp_laspointwrapper_h
 
 #include"lasextent.hpp"
-#include"..\LapisTypeDefs.hpp"
+#include"LapisGisTypeDefs.hpp"
 
 
 namespace lapis {

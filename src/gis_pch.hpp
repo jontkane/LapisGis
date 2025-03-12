@@ -60,4 +60,7 @@
 //xtl
 #include<xtl/xoptional_sequence.hpp>
 
+//whereami
+#include<whereami.h>
+
 #endif

@@ -1,14 +1,24 @@
 #include"gis_pch.hpp"
 #include"projwrappers.hpp"
 #include"GDALWrappers.hpp"
-#include"..\utils\LapisOSSpecific.hpp"
 
 namespace lapis {
+
+	std::string executableFilePath() {
+		int length = wai_getExecutablePath(nullptr, 0, nullptr);
+		std::vector<char> path;
+		path.resize((size_t)length + 1);
+		wai_getExecutablePath(path.data(), length, nullptr);
+		path[length] = '\0';
+		return std::string(path.begin(), path.end());
+	}
+
 	PJ_CONTEXT* ProjContextByThread::get()
 	{
 		std::thread::id thisthread = std::this_thread::get_id();
 		if (!_ctxs.count(thisthread)) {
 			_ctxs[thisthread] = getNewPJContext();
+
 			setProjDirectory(executableFilePath(), _ctxs[thisthread].get());
 		}
 		return _ctxs[thisthread].get();
@@ -60,7 +70,7 @@ namespace lapis {
 		UniqueGdalString wgs = exportToWktWrapper(osr);
 		return projCreateWrapper(wgs.get());
 	}
-	void setProjDirectory(const std::string& path, PJ_CONTEXT* context)
+	bool setProjDirectory(const std::string& path, PJ_CONTEXT* context)
 	{
 		namespace fs = std::filesystem;
 		std::string folder;
@@ -72,6 +82,8 @@ namespace lapis {
 		}
 		char* data = folder.data();
 		proj_context_set_search_paths(context, 1, &data);
+
+		return true;
 	}
 	PJIdentifyWrapper::PJIdentifyWrapper(const SharedPJ& p, const std::string& auth) : _obj(nullptr), _confidence(nullptr)
 	{
@@ -94,4 +106,6 @@ namespace lapis {
 	{
 		return _obj;
 	}
+
+	bool ProjContextByThread::set_proj_db_for_null_context = setProjDirectory(executableFilePath(), nullptr);
 }
