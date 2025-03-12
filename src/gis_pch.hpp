@@ -15,6 +15,8 @@
 #include<unordered_map>
 #include<thread>
 #include<mutex>
+#include<cassert>
+#include<filesystem>
 
 //lazperf
 #pragma warning (push)

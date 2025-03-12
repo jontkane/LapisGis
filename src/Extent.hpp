@@ -2,7 +2,7 @@
 #ifndef lapis_fixedextent_h
 #define lapis_fixedextent_h
 
-#include"LapisGisTypeDefs.hpp"
+#include"..\LapisTypeDefs.hpp"
 #include"lasio.hpp"
 #include"CoordRef.hpp"
 
@@ -40,6 +40,9 @@ namespace lapis {
 		coord_t ymin() const;
 		coord_t ymax() const;
 
+		coord_t xspan() const;
+		coord_t yspan() const;
+
 		//returns true if this extent has an overlap with non-zero area with the other extent
 		bool overlaps(const Extent& e) const;
 		//returns true if the extents touch at all, even at a single point
@@ -72,8 +75,8 @@ namespace lapis {
 
 		void checkValidExtent();
 
-		std::array<double, 6> getGeoTrans(GDALDatasetWrapper& wgd, const std::string& errormsg);
-		void extentInitFromGDALRaster(GDALDatasetWrapper& wgd, const std::array<double, 6>& geotrans);
+		std::array<double, 6> getGeoTrans(UniqueGdalDataset& wgd, const std::string& errormsg);
+		void extentInitFromGDALRaster(UniqueGdalDataset& wgd, const std::array<double, 6>& geotrans);
 
 		void _setFromLasIO(const LasIO& las);
 	};

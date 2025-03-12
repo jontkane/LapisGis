@@ -2,7 +2,7 @@
 #ifndef lp_unit_h
 #define lp_unit_h
 
-#include"LapisGisTypeDefs.hpp"
+#include"..\LapisTypeDefs.hpp"
 #include<regex>
 
 namespace lapis {

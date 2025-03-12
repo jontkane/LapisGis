@@ -35,8 +35,8 @@ namespace lapis {
 	}
 
 	Alignment::Alignment(const std::string& filename) {
-		GDALDatasetWrapper wgd = rasterGDALWrapper(filename);
-		if (wgd.isNull()) {
+		UniqueGdalDataset wgd = rasterGDALWrapper(filename);
+		if (!wgd) {
 			throw InvalidRasterFileException("Error reading " + filename + " as an alignment");
 		}
 		alignmentInitFromGDALRaster(wgd, getGeoTrans(wgd, filename));
@@ -131,6 +131,8 @@ namespace lapis {
 		snapE = cropExtent(snapE, *this);
 
 		//debuffering the extent slightly to correct for floating point imprecision
+		coord_t xbuffer = snapE.xmax() > snapE.xmin() ? xres() / 10. : 0;
+		coord_t ybuffer = snapE.ymax() > snapE.ymin() ? yres() / 10. : 0;
 		snapE = Extent(snapE.xmin() + xres() / 10., snapE.xmax() - xres() / 10., snapE.ymin() + yres() / 10., snapE.ymax() - yres() / 10.);
 
 		auto rc = RowColExtent();
@@ -180,7 +182,7 @@ namespace lapis {
 		}
 	}
 
-	void Alignment::alignmentInitFromGDALRaster(GDALDatasetWrapper& wgd, const std::array<double, 6>& geotrans) {
+	void Alignment::alignmentInitFromGDALRaster(UniqueGdalDataset& wgd, const std::array<double, 6>& geotrans) {
 		//xmin, xres, xshear, ymax, yshear, yres
 		extentInitFromGDALRaster(wgd, geotrans);
 		_ncol = wgd->GetRasterXSize();

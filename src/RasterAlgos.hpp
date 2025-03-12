@@ -3,6 +3,7 @@
 #define lp_rasteralgos_h
 
 #include"cropview.hpp"
+#include"vector.hpp"
 
 namespace lapis {
 
@@ -43,6 +44,27 @@ namespace lapis {
 		for (cell_t cell : CellIterator(a)) {
 			if (out[cell].value() != 0) {
 				out[cell].has_value() = true;
+			}
+		}
+		return out;
+	}
+
+	template<class T>
+	inline Raster<T> aggregateMean(const Raster<T>& r, const Alignment& a) {
+		Raster<T> out{ a };
+		for (cell_t bigCell : CellIterator(a, r, SnapType::out)) {
+			Extent e = a.extentFromCell(bigCell);
+			T numerator = 0;
+			T denominator = 0;
+			for (cell_t smallCell : CellIterator(r, e, SnapType::near)) {
+				if (r[smallCell].has_value()) {
+					denominator++;
+					numerator += r[smallCell].value();
+				}
+			}
+			if (denominator != 0) {
+				out[bigCell].has_value() = true;
+				out[bigCell].value() = numerator / denominator;
 			}
 		}
 		return out;
@@ -538,6 +560,486 @@ namespace lapis {
 		}
 	}
 
+	//returns a polygonization of the input raster. All cells with the same value will be part of the same MultiPolygon
+	//cells connected orthgonally (i.e., not diagonally) will be part of the same Polygon
+	//if attributes is nullptr, then the output will have an attribute table with a single column:
+	//ID, which contains the value associated with that MultiPolygon
+	//it will be either a Real or an Int64, depending on the type of T
+	// 
+	//if attributes is specified, then it must contain "ID" as a numeric column.
+	//all values which exist both in the input raster and in the ID column will be present in the output,
+	//with the other columns preserved
+
+	template<class T>
+	inline VectorsAndAttributes<MultiPolygon> rasterToMultiPolygonForTaos(const Raster<T>& r,
+		const AttributeTable* attributes = nullptr) {
+
+		//this algorithm is based on https://www.tandfonline.com/doi/epdf/10.1080/10824000809480639?needAccess=true
+		//though with a decent number of modifications because the paper is very unclear in multiple parts
+		//it's likely that the algorithm they had in mind is more efficient than the modified version I'm using here
+		struct Vertex {
+			//these coordinates always refer to the cell intersection in the upper left of the named cell
+			rowcol_t row;
+			rowcol_t col;
+			Vertex(rowcol_t row, rowcol_t col) : row(row), col(col) {}
+			bool operator==(const Vertex&) const = default;
+		};
+		enum class Handedness {
+			rightHand,
+			leftHand
+		};
+		struct Arc {
+			std::list<Vertex> vertices;
+			std::weak_ptr<Arc> nextArc;
+			Handedness handedness;
+			Arc(Vertex firstVertex, Handedness handedness) : handedness(handedness) {
+				vertices.push_back(firstVertex);
+			}
+		};
+
+		struct FullPolygonId {
+			T multiPolygonId; //the value in the raster; i.e, which multipolygon this will eventually belong to
+			cell_t polygonId; //the specific polygon the cell belongs to. Only needs to be unique within a multiPolygonId, not globally unique
+			bool operator==(const FullPolygonId&) const = default;
+		};
+		struct PolygonIdHasher {
+			size_t operator()(const FullPolygonId& id) const {
+				return std::hash<T>()(id.multiPolygonId) ^ (std::hash<cell_t>()(id.polygonId) << 1);
+			}
+		};
+		struct TwoArms {
+			bool horizontalIsSolid = false; //i.e., does the cell above this one belong to the same polygon
+			bool verticalIsSolid = false; //i.e., does the cell to the left of this one belong to the same polygon
+
+			std::shared_ptr<Arc> horizontalArcOuter;
+			std::shared_ptr<Arc> horizontalArcInner;
+			std::shared_ptr<Arc> verticalArcOuter;
+			std::shared_ptr<Arc> verticalArcInner;
+
+			std::optional<FullPolygonId> thisPoly;
+			std::optional<FullPolygonId> leftPoly;
+			std::optional<FullPolygonId> abovePoly;
+		};
+
+		struct InProgressPolygon {
+			std::shared_ptr<Arc> firstArc; //important because the first arc encountered will always be part of the outer ring
+			std::unordered_set<std::shared_ptr<Arc>> allArcs;
+		};
+		std::unordered_map<T, std::unordered_map<cell_t, InProgressPolygon>> allPolygons;
+		auto addArcToPoly = [&allPolygons](std::shared_ptr<Arc> arc, FullPolygonId id) {
+			//the behavior of operator[] to default-construct the value if necessary is desirable here
+			InProgressPolygon& thisPoly = allPolygons[id.multiPolygonId][id.polygonId];
+			if (thisPoly.firstArc == nullptr) {
+				thisPoly.firstArc = arc;
+			}
+			thisPoly.allArcs.insert(arc);
+		};
+
+		using small_cell_t = uint32_t; //memory is a big issue in this function, and in practice, the rasters I'm feeding to it never need the additional space a full int64 provides
+		Raster<small_cell_t> polygonIdRaster{ (Alignment)r }; //combined with the input raster, this is enough to construct a FullPolygonId from a cell
+		std::vector<std::vector<T>> valueByFinalRow; //for each row, which multipolygons no longer need to be tracked once you've finished that row?
+
+		//first pass gets all the cells to have the correct polygon id, using union find
+
+		Raster<small_cell_t>& parents = polygonIdRaster; //a simple re-label to make it easier to follow the way the usage of this object changes as the algorithm progresses
+		auto findAncestor = [&](cell_t current)->small_cell_t {
+			std::vector<cell_t> toChange{};
+			small_cell_t parent = (small_cell_t)parents.atCellUnsafe(current).value();
+			small_cell_t grandparent = (small_cell_t)parents.atCellUnsafe(parent).value();
+
+			while (parent != grandparent) {
+				toChange.push_back(current);
+				current = parent;
+				parent = grandparent;
+				grandparent = parents.atCellUnsafe(grandparent).value();
+			}
+			for (cell_t id : toChange) {
+				parents.atCellUnsafe(id).value() = grandparent;
+			}
+			return grandparent;
+		};
+		for (rowcol_t row = 0; row < r.nrow(); ++row) {
+			for (rowcol_t col = 0; col < r.ncol(); ++col) {
+				auto v = r.atRCUnsafe(row, col);
+				if (!v.has_value()) {
+					continue;
+				}
+				auto thisParent = parents.atRCUnsafe(row, col);
+				thisParent.has_value() = true;
+				bool leftMatch = false;
+				bool aboveMatch = false;
+				if (col > 0) {
+					auto vLeft = r.atRCUnsafe(row, col - 1);
+					leftMatch = v.value() == vLeft.value();
+				}
+				if (row > 0) {
+					auto vAbove = r.atRCUnsafe(row - 1, col);
+					aboveMatch = v.value() == vAbove.value();
+				}
+
+				if (!leftMatch && !aboveMatch) {
+					parents.atRCUnsafe(row, col).value() = (small_cell_t)parents.cellFromRowColUnsafe(row, col);
+				}
+				else if (leftMatch) {
+					if (aboveMatch) { //both match
+						small_cell_t leftParent = findAncestor(parents.cellFromRowColUnsafe(row, col - 1));
+						small_cell_t aboveParent = findAncestor(parents.cellFromRowColUnsafe(row - 1, col));
+						thisParent.value() = leftParent;
+						parents.atCellUnsafe(aboveParent).value() = leftParent;
+					}
+					else {
+						small_cell_t leftParent = findAncestor(parents.cellFromRowColUnsafe(row, col - 1));
+						thisParent.value() = leftParent;
+					}
+
+				}
+				else { //only above matches
+					small_cell_t aboveParent = findAncestor(parents.cellFromRowColUnsafe(row - 1, col));
+					thisParent.value() = aboveParent;
+				}
+			}
+		}
+
+		//re-label everything based on aliases to ensure there's a single id per polygon, and populate valueByFinalRow
+		//it should be fine to reuse the same raster used for holding parents for the final labels
+		std::unordered_map<T, rowcol_t> finalRowByValue;
+		for (cell_t cell : CellIterator(parents)) {
+			auto v = r.atCellUnsafe(cell);
+			if (!v.has_value()) {
+				continue;
+			}
+			auto polygonId = polygonIdRaster.atCellUnsafe(cell);
+			polygonId.has_value() = true;
+			polygonId.value() = findAncestor(cell);
+			finalRowByValue[v.value()] = polygonIdRaster.rowFromCellUnsafe(cell);
+		}
+		valueByFinalRow.resize(polygonIdRaster.nrow());
+		for (const auto& keyValue : finalRowByValue) {
+			valueByFinalRow[keyValue.second].push_back(keyValue.first);
+		}
+
+		auto formRing = [](std::shared_ptr<Arc> startArc,
+			InProgressPolygon& inProgressPoly, const Alignment& a)->std::vector<CoordXY> {
+
+				std::shared_ptr<Arc> currentArc = startArc;
+				std::list<Vertex> ringRowCol;
+				do {
+					assert(currentArc->nextArc != nullptr);
+					if (currentArc->handedness != Handedness::leftHand) {
+						currentArc->vertices.reverse();
+					}
+					currentArc->vertices.pop_front();
+					inProgressPoly.allArcs.erase(currentArc);
+					ringRowCol.splice(ringRowCol.end(), currentArc->vertices);
+					currentArc = currentArc->nextArc.lock();
+				} while (currentArc != startArc);
+
+				std::vector<CoordXY> ringXY;
+				ringXY.reserve(ringRowCol.size());
+				coord_t xAdj = a.xres() / 2.;
+				coord_t yAdj = a.yres() / 2.;
+				for (const Vertex& v : ringRowCol) {
+					//it's important to keep these calls as the unsafe version;
+					//we need the property that they produce a sensible answer even outside the bounds of the alignment
+					coord_t x = a.xFromColUnsafe(v.col) - xAdj;
+					coord_t y = a.yFromRowUnsafe(v.row) + yAdj;
+					ringXY.push_back(CoordXY(x, y));
+				}
+				return ringXY;
+			};
+		auto formMultiPoly = [&](T id)->MultiPolygon {
+			MultiPolygon thisMultiPoly{};
+			for (auto& polyKeyValue : allPolygons.at(id)) {
+				Polygon thisPoly{};
+				InProgressPolygon& inProgressPoly = polyKeyValue.second;
+				while (inProgressPoly.allArcs.size()) {
+					if (inProgressPoly.firstArc) {
+						std::vector<CoordXY> outerRing = formRing(inProgressPoly.firstArc, inProgressPoly, r);
+						inProgressPoly.firstArc = nullptr;
+						thisPoly = Polygon(outerRing);
+					}
+					else {
+						std::vector<CoordXY> innerRing = formRing(*inProgressPoly.allArcs.begin(), inProgressPoly, r);
+						thisPoly.addInnerRing(innerRing);
+					}
+				}
+				thisMultiPoly.addPolygon(thisPoly);
+			}
+			return thisMultiPoly;
+			};
+		VectorsAndAttributes<MultiPolygon> outShp{ r.crs() };
+		std::unordered_map<T, size_t> attributeRows;
+		if (!attributes) {
+			outShp.addNumericField<T>("ID");
+		}
+		else {
+			const std::vector<std::string>& allFieldNames = attributes->getAllFieldNames();
+			for (const std::string& name : allFieldNames) {
+				switch (attributes->getFieldType(name)) {
+				case FieldType::String:
+					outShp.addStringField(name, attributes->getStringFieldWidth(name));
+					break;
+				case FieldType::Real:
+					outShp.addRealField(name);
+					break;
+				case FieldType::Integer:
+					outShp.addIntegerField(name);
+					break;
+				}
+			}
+			for (size_t i = 0; i < attributes->nrow(); ++i) {
+				attributeRows.emplace((T)attributes->getIntegerField(i, "ID"), i);
+			}
+		}
+
+		//finally, do some edge tracing
+		//with this algorithm, edges are identified to the left and above the current cell, so we need to go to the "virtual" cells below and to the right of the real data
+		std::vector<TwoArms> prevRow = std::vector<TwoArms>(polygonIdRaster.ncol() + 1);
+		for (rowcol_t row = 0; row < polygonIdRaster.nrow() + 1; ++row) {
+			std::vector<TwoArms> thisRow = std::vector<TwoArms>(polygonIdRaster.ncol() + 1);
+
+			for (rowcol_t col = 0; col < thisRow.size(); ++col) {
+				TwoArms& thisArms = thisRow[col];
+				if (col < polygonIdRaster.ncol() && row < polygonIdRaster.nrow()) {
+					if (polygonIdRaster.atRCUnsafe(row, col).has_value()) {
+						thisArms.thisPoly = FullPolygonId{
+							r.atRCUnsafe(row,col).value(),
+							polygonIdRaster.atRCUnsafe(row, col).value()
+						};
+					}
+				}
+
+				bool leftHorizontalSolid = false;
+				bool aboveVerticalSolid = false;
+				TwoArms* leftArms = nullptr;
+				TwoArms* aboveArms = nullptr;
+				if (col == 0) {
+					thisArms.verticalIsSolid = true;
+				}
+				else {
+					leftArms = &thisRow[col - 1];
+					thisArms.leftPoly = leftArms->thisPoly;
+					leftHorizontalSolid = leftArms->horizontalIsSolid;
+					if (col == thisRow.size() - 1) {
+						thisArms.verticalIsSolid = true;
+					}
+					else {
+						thisArms.verticalIsSolid = (thisArms.leftPoly != thisArms.thisPoly);
+					}
+				}
+
+
+				if (row == 0) {
+					thisArms.horizontalIsSolid = true;
+				}
+				else {
+					aboveArms = &prevRow[col];
+					thisArms.abovePoly = aboveArms->thisPoly;
+					aboveVerticalSolid = aboveArms->verticalIsSolid;
+					if (row == polygonIdRaster.nrow()) {
+						thisArms.horizontalIsSolid = true;
+					}
+					else {
+						thisArms.horizontalIsSolid = (thisArms.abovePoly != thisArms.thisPoly);
+					}
+				}
+
+
+				constexpr uint8_t THIS_VERT_SOLID = 1 << 0;
+				constexpr uint8_t THIS_HORIZ_SOLID = 1 << 1;
+				constexpr uint8_t UPPER_VERT_SOLID = 1 << 2;
+				constexpr uint8_t LEFT_HORIZ_SOLID = 1 << 3;
+				uint8_t thisCase =
+					(uint8_t)(thisArms.verticalIsSolid) << 0
+					| (uint8_t)(thisArms.horizontalIsSolid) << 1
+					| (uint8_t)(aboveVerticalSolid) << 2
+					| (uint8_t)(leftHorizontalSolid) << 3;
+
+				Vertex currentVertex = Vertex(row, col);
+
+				//these are helper functions for common tasks in the below cases
+				auto connectArcsLeftFirst = [](std::shared_ptr<Arc> one, std::shared_ptr<Arc> two) {
+					assert(one->handedness != two->handedness);
+					std::shared_ptr<Arc> left = one->handedness == Handedness::leftHand ? one : two;
+					std::shared_ptr<Arc> right = one->handedness == Handedness::rightHand ? one : two;
+					assert(left->nextArc == nullptr);
+					left->nextArc = right;
+					};
+				auto connectArcsRightFirst = [](std::shared_ptr<Arc> one, std::shared_ptr<Arc> two) {
+					assert(one->handedness != two->handedness);
+					std::shared_ptr<Arc> left = one->handedness == Handedness::leftHand ? one : two;
+					std::shared_ptr<Arc> right = one->handedness == Handedness::rightHand ? one : two;
+					assert(right->nextArc == nullptr);
+					right->nextArc = left;
+					};
+				auto closeUpperLeftPolyInner = [&]() {
+					aboveArms->verticalArcOuter->vertices.push_back(currentVertex);
+					leftArms->horizontalArcOuter->vertices.push_back(currentVertex);
+					connectArcsLeftFirst(aboveArms->verticalArcOuter, leftArms->horizontalArcOuter);
+					};
+				auto upperVertContinueCornerInner = [&]() {
+					aboveArms->verticalArcInner->vertices.push_back(currentVertex);
+					thisArms.horizontalArcOuter = aboveArms->verticalArcInner;
+					};
+				auto leftHorizContinueCornerInner = [&]() {
+					leftArms->horizontalArcInner->vertices.push_back(currentVertex);
+					thisArms.verticalArcOuter = leftArms->horizontalArcInner;
+					};
+				auto makeNewArcsForInnerPoly = [&]() {
+					thisArms.verticalArcInner = std::make_shared<Arc>(currentVertex, Handedness::rightHand);
+					thisArms.horizontalArcInner = std::make_shared<Arc>(currentVertex, Handedness::leftHand);
+					connectArcsRightFirst(thisArms.verticalArcInner, thisArms.horizontalArcInner);
+					if (thisArms.thisPoly) {
+						addArcToPoly(thisArms.verticalArcInner, *thisArms.thisPoly);
+						addArcToPoly(thisArms.horizontalArcInner, *thisArms.thisPoly);
+					}
+					};
+				auto continueOuterHoriz = [&]() {
+					thisArms.horizontalArcOuter = leftArms->horizontalArcOuter;
+					};
+				auto continueOuterVert = [&]() {
+					thisArms.verticalArcOuter = aboveArms->verticalArcOuter;
+					};
+				auto makeNewArcsForOuterPoly = [&]() {
+					thisArms.verticalArcOuter = std::make_shared<Arc>(currentVertex, Handedness::leftHand);
+					thisArms.horizontalArcOuter = std::make_shared<Arc>(currentVertex, Handedness::rightHand);
+					connectArcsRightFirst(thisArms.verticalArcOuter, thisArms.horizontalArcOuter);
+					if (thisArms.leftPoly) {
+						addArcToPoly(thisArms.verticalArcOuter, *thisArms.leftPoly);
+					}
+					if (thisArms.abovePoly) {
+						addArcToPoly(thisArms.horizontalArcOuter, *thisArms.leftPoly);
+					}
+					};
+				auto continueInnerVert = [&]() {
+					thisArms.verticalArcInner = aboveArms->verticalArcInner;
+					};
+				auto leftHorizContinueCornerOuter = [&]() {
+					leftArms->horizontalArcOuter->vertices.push_back(currentVertex);
+					thisArms.verticalArcInner = leftArms->horizontalArcOuter;
+					};
+				auto continueInnerHoriz = [&]() {
+					thisArms.horizontalArcInner = leftArms->horizontalArcInner;
+					};
+				auto upperVertContinueCornerOuter = [&]() {
+					aboveArms->verticalArcOuter->vertices.push_back(currentVertex);
+					thisArms.horizontalArcInner = aboveArms->verticalArcOuter;
+					};
+				auto closeUpperLeftPolyOuter = [&]() {
+					aboveArms->verticalArcInner->vertices.push_back(currentVertex);
+					leftArms->horizontalArcInner->vertices.push_back(currentVertex);
+					connectArcsLeftFirst(aboveArms->verticalArcInner, leftArms->horizontalArcInner);
+					};
+
+				//these cases are pulled from the paper cited above
+				//when the upper vertical is solid, aboveArms should never be nullptr
+				//when the left horizontal is solid, leftArms should never be nullptr
+				switch (thisCase) {
+				case (THIS_VERT_SOLID | THIS_HORIZ_SOLID | UPPER_VERT_SOLID | LEFT_HORIZ_SOLID): //case a
+					closeUpperLeftPolyInner();
+					upperVertContinueCornerInner();
+					leftHorizContinueCornerInner();
+					makeNewArcsForInnerPoly();
+					break;
+				case (THIS_VERT_SOLID | THIS_HORIZ_SOLID | LEFT_HORIZ_SOLID): //case b
+					continueOuterHoriz();
+					leftHorizContinueCornerInner();
+					makeNewArcsForInnerPoly();
+					break;
+				case (THIS_VERT_SOLID | THIS_HORIZ_SOLID | UPPER_VERT_SOLID): //case c
+					continueOuterVert();
+					upperVertContinueCornerInner();
+					makeNewArcsForInnerPoly();
+					break;
+				case (THIS_VERT_SOLID | THIS_HORIZ_SOLID): //case d
+					makeNewArcsForInnerPoly();
+					makeNewArcsForOuterPoly();
+					break;
+				case (THIS_VERT_SOLID | UPPER_VERT_SOLID | LEFT_HORIZ_SOLID): //case e
+					closeUpperLeftPolyInner();
+					leftHorizContinueCornerInner();
+					continueInnerVert();
+					break;
+				case (THIS_VERT_SOLID | LEFT_HORIZ_SOLID): //case f
+					leftHorizContinueCornerInner();
+					leftHorizContinueCornerOuter();
+					break;
+				case (THIS_VERT_SOLID | UPPER_VERT_SOLID): //case g
+					continueOuterVert();
+					continueInnerVert();
+					break;
+				case (THIS_VERT_SOLID): //case h
+					assert(false);
+					throw std::runtime_error("impossible case in polygonization");
+					break;
+				case (THIS_HORIZ_SOLID | UPPER_VERT_SOLID | LEFT_HORIZ_SOLID): //case i
+					closeUpperLeftPolyInner();
+					continueInnerHoriz();
+					upperVertContinueCornerInner();
+					break;
+				case (THIS_HORIZ_SOLID | LEFT_HORIZ_SOLID): //case j
+					continueInnerHoriz();
+					continueOuterHoriz();
+					break;
+				case (THIS_HORIZ_SOLID | UPPER_VERT_SOLID): //case k
+					upperVertContinueCornerInner();
+					upperVertContinueCornerOuter();
+					break;
+				case (THIS_HORIZ_SOLID): //case l
+					assert(false);
+					throw std::runtime_error("impossible case in polygonization");
+					break;
+				case (UPPER_VERT_SOLID | LEFT_HORIZ_SOLID): //case m
+					closeUpperLeftPolyInner();
+					closeUpperLeftPolyOuter();
+					break;
+				case (LEFT_HORIZ_SOLID): //case n
+					assert(false);
+					throw std::runtime_error("impossible case in polygonization");
+					break;
+				case (UPPER_VERT_SOLID): //case o
+					assert(false);
+					throw std::runtime_error("impossible case in polygonization");
+					break;
+				case (0): //case p
+					//no action necessary
+					break;
+				}
+			}
+			prevRow = std::move(thisRow);
+			if (row == 0) {
+				continue;
+			}
+			for (T value : valueByFinalRow[row - 1]) {
+				if (!attributes || attributeRows.contains(value)) {
+					MultiPolygon thisMultiPoly = formMultiPoly(value);
+					outShp.addGeometry(thisMultiPoly);
+					if (!attributes) {
+						outShp.back().setNumericField<T>("ID", value);
+					}
+					else {
+						size_t attributeRow = attributeRows.at(value);
+						for (const std::string& name : attributes->getAllFieldNames()) {
+							switch (outShp.getFieldType(name)) {
+							case FieldType::String:
+								outShp.back().setStringField(name, attributes->getStringField(attributeRow, name));
+								break;
+							case FieldType::Real:
+								outShp.back().setRealField(name, attributes->getRealField(attributeRow, name));
+								break;
+							case FieldType::Integer:
+								outShp.back().setIntegerField(name, attributes->getIntegerField(attributeRow, name));
+								break;
+							}
+						}
+					}
+				}
+				allPolygons.erase(value);
+			}
+		}
+
+		return outShp;
+	}
 }
 
 #endif
