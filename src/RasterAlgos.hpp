@@ -787,7 +787,7 @@ namespace lapis {
 					break;
 				}
 			}
-			for (size_t i = 0; i < attributes->nrow(); ++i) {
+			for (size_t i = 0; i < attributes->nFeature(); ++i) {
 				attributeRows.emplace((T)attributes->getIntegerField(i, "ID"), i);
 			}
 		}

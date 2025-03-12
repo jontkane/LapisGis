@@ -47,6 +47,12 @@ namespace lapis {
 		_zUnits = _inferZUnits();
 	}
 
+	CoordRef::CoordRef(const OGRSpatialReference* osr)
+	{
+		_crsFromString(osr->exportToWkt());
+		_zUnits = _inferZUnits();
+	}
+
 	const std::string CoordRef::getPrettyWKT() const {
 		if (isEmpty()) {
 			return std::string("");

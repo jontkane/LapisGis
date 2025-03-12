@@ -21,6 +21,7 @@ namespace lapis {
 		CoordRef(const char* s, LinearUnit zUnits);
 		CoordRef(const SharedPJ& pj);
 		CoordRef(const LasIO& las);
+		CoordRef(const OGRSpatialReference* osr);
 
 		const std::string getPrettyWKT() const;
 

@@ -2,108 +2,174 @@
 
 namespace lapis {
 
-    OGRPolygon Polygon::asGdal() const
-    {
-        OGRPolygon out{};
+    WrongGeometryTypeException::WrongGeometryTypeException(const std::string& error) : std::runtime_error(error) {}
+    WrongFieldTypeException::WrongFieldTypeException(const std::string& error) : std::runtime_error(error) {}
 
-        OGRLinearRing gdalOuterRing = _gdalCurveFromRing(_outerRing);
-        out.addRing(&gdalOuterRing);
-        for (const auto& innerRing : _innerRings) {
-            OGRLinearRing gdalInnerRing = _gdalCurveFromRing(innerRing);
-            out.addRing(&gdalInnerRing);
-        }
-        return out;
+    OGRwkbGeometryType Geometry::gdalGeometryType() const
+    {
+        return OGRwkbGeometryType::wkbUnknown;
     }
-    Polygon::Polygon(OGRGeometry* gdalGeometry)
+    const CoordRef& Geometry::crs() const
     {
-        OGRPolygon* gdalPolygon = dynamic_cast<OGRPolygon*>(gdalGeometry);
-        if (!gdalPolygon) {
-            throw std::invalid_argument("geometry is not a polygon");
+        return _crs;
+    }
+    void Geometry::setCrs(const CoordRef& crs)
+    {
+        _crs = crs;
+    }
+    Point::Point(const OGRGeometry& geom)
+    {
+        if (wkbFlatten(geom.getGeometryType()) != wkbPoint) {
+            throw WrongGeometryTypeException("Wrong geometry; expected Point");
         }
+        _point = *geom.toPoint();
+        setCrs(CoordRef(_point.getSpatialReference()));
+    }
+    Point::Point(coord_t x, coord_t y)
+    {
+        _point = OGRPoint(x, y);
+    }
+    Point::Point(coord_t x, coord_t y, const CoordRef& crs)
+    {
+        _point = OGRPoint(x, y);
+        _crs = crs;
+    }
+    Point::Point(CoordXY xy)
+    {
+        _point = OGRPoint(xy.x, xy.y);
+    }
+    Point::Point(CoordXY xy, const CoordRef& crs)
+    {
+        _point = OGRPoint(xy.x, xy.y);
+        _crs = crs;
+    }
+    OGRwkbGeometryType Point::gdalGeometryType() const
+    {
+        return OGRwkbGeometryType::wkbPoint;
+    }
+    const OGRPoint& Point::gdalGeometry() const
+    {
+        return _point;
+    }
+    const OGRGeometry& Point::gdalGeometryGeneric() const
+    {
+        return _point;
+    }
+    coord_t Point::x() const
+    {
+        return _point.getX();
+    }
+    coord_t Point::y() const
+    {
+        return _point.getY();
+    }
 
-        auto stdVectorFromOGRLinearRing = [](const OGRLinearRing* ogr)->std::vector<CoordXY> {
-            std::vector<CoordXY> out;
-            out.reserve(ogr->getNumPoints());
-            for (const OGRPoint& point : *ogr) {
-                out.emplace_back(point.getX(), point.getY());
-            }
-            out.pop_back(); //gdal rings close themselves by duplicating the first point at the end
-            return out;
-        };
-
-        OGRLinearRing* outerRing = gdalPolygon->getExteriorRing();
-        _outerRing = stdVectorFromOGRLinearRing(outerRing);
-        int nInnerRing = gdalPolygon->getNumInteriorRings();
-        _innerRings.reserve(nInnerRing);
-        for (int i = 0; i < nInnerRing; ++i) {
-            _innerRings.emplace_back(stdVectorFromOGRLinearRing(gdalPolygon->getInteriorRing(i)));
+    static void addPointToRing(OGRLinearRing& ring, coord_t x, coord_t y) {
+        OGRPoint point;
+        point.setX(x);
+        point.setY(y);
+        ring.addPoint(&point);
+    }
+    Polygon::Polygon(const OGRGeometry& geom)
+    {
+        if (wkbFlatten(geom.getGeometryType()) != wkbPolygon) {
+            throw WrongGeometryTypeException("Wrong geometry; expected Polygon");
         }
+        _polygon = *geom.toPolygon();
+        setCrs(CoordRef(_polygon.getSpatialReference()));
+    }
+    Polygon::Polygon(const std::vector<CoordXY>& outerRing)
+    {
+        OGRLinearRing gdalRing;
+        for (const CoordXY& xy : outerRing) {
+            addPointToRing(gdalRing, xy.x, xy.y);
+        }
+        gdalRing.closeRings();
+        _polygon.addRing(&gdalRing);
+    }
+    Polygon::Polygon(const std::vector<CoordXY>& outerRing, const CoordRef& crs)
+    {
+        OGRLinearRing gdalRing;
+        for (const CoordXY& xy : outerRing) {
+            addPointToRing(gdalRing, xy.x, xy.y);
+        }
+        gdalRing.closeRings();
+        _polygon.addRing(&gdalRing);
+        _crs = crs;
     }
     Polygon::Polygon(const Extent& e)
     {
-        _outerRing.emplace_back(e.xmin(), e.ymax());
-        _outerRing.emplace_back(e.xmin(), e.ymin());
-        _outerRing.emplace_back(e.xmax(), e.ymin());
-        _outerRing.emplace_back(e.xmax(), e.ymax());
+        _crs = e.crs();
+        OGRLinearRing gdalRing;
+        addPointToRing(gdalRing, e.xmin(), e.ymax());
+        addPointToRing(gdalRing, e.xmin(), e.ymin());
+        addPointToRing(gdalRing, e.xmax(), e.ymin());
+        addPointToRing(gdalRing, e.xmax(), e.ymax());
+        gdalRing.closeRings();
+        _polygon.addRing(&gdalRing);
     }
     Polygon::Polygon(const QuadExtent& q)
     {
-        //this list is clockwise, so we need to reverse it
+        _crs = q.crs();
         const CoordXYVector& coords = q.coords();
-
-        for (int i = (int)(coords.size() - 1); i >= 0; --i) {
-            _outerRing.emplace_back(coords[i]);
+        OGRLinearRing gdalRing;
+        for (size_t i = 0; i < coords.size(); ++i) {
+            addPointToRing(gdalRing, coords[i].x, coords[i].y);
         }
+        gdalRing.closeRings();
+        _polygon.addRing(&gdalRing);
     }
-    OGRLinearRing Polygon::_gdalCurveFromRing(const std::vector<CoordXY>& ring) const
+    OGRwkbGeometryType Polygon::gdalGeometryType() const
     {
-        
-        OGRLinearRing out{};
-        
-        auto addPoint = [&](const CoordXY& xy) {
-            OGRPoint point;
-            point.setX(xy.x);
-            point.setY(xy.y);
-            out.addPoint(&point);
-        };
-        for (const CoordXY& xy : ring) {
-            addPoint(xy);
-        }
-        addPoint(ring.front());
-        return out;
+        return OGRwkbGeometryType::wkbPolygon;
     }
-    Polygon::Polygon(const std::vector<CoordXY>& outerRing) :_outerRing(outerRing) {}
+    const OGRPolygon& Polygon::gdalGeometry() const
+    {
+        return _polygon;
+    }
+    const OGRGeometry& Polygon::gdalGeometryGeneric() const
+    {
+        return _polygon;
+    }
     void Polygon::addInnerRing(const std::vector<CoordXY>& innerRing)
     {
-        _innerRings.push_back(innerRing);
+        OGRLinearRing gdalRing;
+        for (const CoordXY& xy : innerRing) {
+            addPointToRing(gdalRing, xy.x, xy.y);
+        }
+        gdalRing.closeRings();
+        _polygon.addRing(&gdalRing);
     }
-    OGRMultiPolygon MultiPolygon::asGdal() const
+
+    MultiPolygon::MultiPolygon(const OGRGeometry& geom)
     {
-        OGRMultiPolygon out{};
-        for (const auto& polygon : _polygons) {
-            OGRPolygon poly = polygon.asGdal();
-            out.addGeometry(&poly);
+        if (wkbFlatten(geom.getGeometryType()) != wkbMultiPolygon) {
+            throw WrongGeometryTypeException("Wrong geometry; expected MultiPolygon");
         }
-        return out;
+        _multiPolygon = *geom.toMultiPolygon();
+        setCrs(CoordRef(_multiPolygon.getSpatialReference()));
     }
-    MultiPolygon::MultiPolygon(OGRGeometry* gdalGeometry)
+    OGRwkbGeometryType MultiPolygon::gdalGeometryType() const
     {
-        OGRMultiPolygon* gdalMultiPolygon = dynamic_cast<OGRMultiPolygon*>(gdalGeometry);
-        if (!gdalMultiPolygon) {
-            throw std::invalid_argument("geometry is not a multipolygon");
-        }
-        for (OGRPolygon* gdalPolygon : *gdalMultiPolygon) {
-            _polygons.emplace_back(Polygon(gdalPolygon));
-        }
+        return OGRwkbGeometryType::wkbMultiPolygon;
+    }
+    const OGRMultiPolygon& MultiPolygon::gdalGeometry() const
+    {
+        return _multiPolygon;
+    }
+    const OGRGeometry& MultiPolygon::gdalGeometryGeneric() const
+    {
+        return _multiPolygon;
     }
     void MultiPolygon::addPolygon(const Polygon& polygon)
     {
-        _polygons.push_back(polygon);
+        _multiPolygon.addGeometry(&polygon.gdalGeometry());
     }
+
     void AttributeTable::setStringField(size_t index, const std::string& name, const std::string& value)
     {
         if (_fields.at(name).type != FieldType::String) {
-            throw std::runtime_error("Not a string field");
+            throw WrongFieldTypeException("Wrong field type; expected string");
         }
         FixedWidthString& fws = std::get<FixedWidthString>(_fields.at(name).values.at(index));
         fws.set(value, _fields.at(name).width);
@@ -111,14 +177,14 @@ namespace lapis {
     void AttributeTable::setIntegerField(size_t index, const std::string& name, int64_t value)
     {
         if (_fields.at(name).type != FieldType::Integer) {
-            throw std::runtime_error("Not an integer field");
+            throw WrongFieldTypeException("Wrong field type; expected integer");
         }
         _fields.at(name).values.at(index) = value;
     }
     void AttributeTable::setRealField(size_t index, const std::string& name, double value)
     {
         if (_fields.at(name).type != FieldType::Real) {
-            throw std::runtime_error("Not a floating point field");
+            throw WrongFieldTypeException("Wrong field type; expected real");
         }
         _fields.at(name).values.at(index) = value;
     }
@@ -165,7 +231,7 @@ namespace lapis {
         _nrow++;
         resize(_nrow);
     }
-    size_t AttributeTable::nrow() const
+    size_t AttributeTable::nFeature() const
     {
         return _nrow;
     }
@@ -180,44 +246,44 @@ namespace lapis {
     size_t AttributeTable::getStringFieldWidth(const std::string& name) const
     {
         if (_fields.at(name).type != FieldType::String) {
-            throw std::runtime_error("Not a string field");
+            throw WrongFieldTypeException("Wrong field type; expected string");
         }
         return _fields.at(name).width;
     }
     const std::string& AttributeTable::getStringField(size_t index, const std::string& name) const
     {
         if (_fields.at(name).type != FieldType::String) {
-            throw std::runtime_error("Not a string field");
+            throw WrongFieldTypeException("Wrong field type; expected string");
         }
         return std::get<FixedWidthString>(_fields.at(name).values.at(index)).get();
     }
     int64_t AttributeTable::getIntegerField(size_t index, const std::string& name) const
     {
         if (_fields.at(name).type != FieldType::Integer) {
-            throw std::runtime_error("Not an integer field");
+            throw WrongFieldTypeException("Wrong field type; expected integer");
         }
         return std::get<int64_t>(_fields.at(name).values.at(index));
     }
     double AttributeTable::getRealField(size_t index, const std::string& name) const
     {
         if (_fields.at(name).type != FieldType::Real) {
-            throw std::runtime_error("Not a floating point field");
+            throw WrongFieldTypeException("Wrong field type; expected real");
         }
         return std::get<double>(_fields.at(name).values.at(index));
     }
-    OGRPoint Point::asGdal() const
+
+    const std::string& AttributeTable::FixedWidthString::get() const
     {
-        return OGRPoint(_x,_y);
+        return _data;
     }
-    Point::Point(OGRGeometry* gdalGeometry)
+    void AttributeTable::FixedWidthString::set(const std::string& value, size_t width)
     {
-        OGRPoint* gdalPoint = dynamic_cast<OGRPoint*>(gdalGeometry);
-        if (!gdalPoint) {
-            throw std::invalid_argument("geometry is not a point");
+        if (value.size() > width) {
+            _data = value.substr(0, width);
         }
-        _x = gdalPoint->getX();
-        _y = gdalPoint->getY();
+        else {
+            _data = value + std::string(width - value.size(), '\0');
+        }
     }
-    Point::Point(coord_t x, coord_t y) : _x(x), _y(y) {}
-    Point::Point(CoordXY xy) : _x(xy.x), _y(xy.y) {}
+
 }

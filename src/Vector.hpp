@@ -5,54 +5,88 @@
 
 namespace lapis {
 
-	class Point {
+	class WrongGeometryTypeException : public std::runtime_error {
 	public:
-		constexpr static OGRwkbGeometryType gdalGeometryType = wkbPoint;
-		OGRPoint asGdal() const;
-
-		Point() = default;
-		Point(OGRGeometry* gdalGeometry);
-		Point(coord_t x, coord_t y);
-		Point(CoordXY xy);
-	private:
-		coord_t _x;
-		coord_t _y;
+		WrongGeometryTypeException(const std::string& error);
+	};
+	class WrongFieldTypeException : public std::runtime_error {
+	public:
+		WrongFieldTypeException(const std::string& error);
 	};
 
-	class Polygon {
+	class Geometry {
 	public:
+		constexpr static OGRwkbGeometryType gdalGeometryTypeStatic = wkbUnknown;
+		using GdalEquivalent = OGRGeometry;
 
-		constexpr static OGRwkbGeometryType gdalGeometryType = wkbPolygon;
-		OGRPolygon asGdal() const;
+		virtual OGRwkbGeometryType gdalGeometryType() const;
 
-		Polygon() = default;
-		Polygon(OGRGeometry* gdalGeometry);
+		virtual const OGRGeometry& gdalGeometryGeneric() const = 0;
+
+		const CoordRef& crs() const;
+		void setCrs(const CoordRef& crs);
+
+	protected:
+		CoordRef _crs;
+		Geometry() = default;
+		Geometry(const Geometry&) = default;
+	};
+	class Point : public Geometry {
+	public:
+		constexpr static OGRwkbGeometryType gdalGeometryTypeStatic = wkbPoint;
+		using GdalEquivalent = OGRPoint;
+
+		Point() = delete;
+		Point(const OGRGeometry& geom);
+		Point(coord_t x, coord_t y);
+		Point(coord_t x, coord_t y, const CoordRef& crs);
+		Point(CoordXY xy);
+		Point(CoordXY xy, const CoordRef& crs);
+
+		OGRwkbGeometryType gdalGeometryType() const override;
+		const OGRPoint& gdalGeometry() const;
+		const OGRGeometry& gdalGeometryGeneric() const override;
+
+		coord_t x() const;
+		coord_t y() const;
+	private:
+		OGRPoint _point;
+	};
+	class Polygon : public Geometry {
+	public:
+		constexpr static OGRwkbGeometryType gdalGeometryTypeStatic = wkbPolygon;
+		using GdalEquivalent = OGRPolygon;
+
+		Polygon() = delete;
+		Polygon(const OGRGeometry& geom);
+		Polygon(const std::vector<CoordXY>& outerRing);
+		Polygon(const std::vector<CoordXY>& outerRing, const CoordRef& crs);
 		Polygon(const Extent& e);
 		Polygon(const QuadExtent& q);
 
-		//in these functions, do *not* duplicate the first vertex
-		//the outer ring should be listed in counterclockwise order, and inner rings in clockwise order
-		Polygon(const std::vector<CoordXY>& outerRing);
-
+		OGRwkbGeometryType gdalGeometryType() const override;
+		const OGRPolygon& gdalGeometry() const;
+		const OGRGeometry& gdalGeometryGeneric() const override;
+		
 		void addInnerRing(const std::vector<CoordXY>& innerRing);
 	private:
-		std::vector<CoordXY> _outerRing;
-		std::vector<std::vector<CoordXY>> _innerRings;
-
-		OGRLinearRing _gdalCurveFromRing(const std::vector<CoordXY>& ring) const;
+		OGRPolygon _polygon;
 	};
-
-	class MultiPolygon {
+	class MultiPolygon : public Geometry {
 	public:
-		constexpr static OGRwkbGeometryType gdalGeometryType = wkbMultiPolygon;
-		OGRMultiPolygon asGdal() const;
+		constexpr static OGRwkbGeometryType gdalGeometryTypeStatic = wkbMultiPolygon;
+		using GdalEquivalent = OGRMultiPolygon;
 
-		MultiPolygon() = default;
-		MultiPolygon(OGRGeometry* gdalGeometry);
+		MultiPolygon() = delete;
+		MultiPolygon(const OGRGeometry& geom);
+
+		OGRwkbGeometryType gdalGeometryType() const override;
+		const OGRMultiPolygon& gdalGeometry() const;
+		const OGRGeometry& gdalGeometryGeneric() const override;
 
 		void addPolygon(const Polygon& polygon);
 	private:
-		std::vector<Polygon> _polygons;
+		OGRMultiPolygon _multiPolygon;
 	};
 
 	enum class FieldType {
@@ -72,7 +106,7 @@ namespace lapis {
 		void resize(size_t nrow);
 		void addRow();
 
-		size_t nrow() const;
+		size_t nFeature() const;
 
 		std::vector<std::string> getAllFieldNames() const;
 		FieldType getFieldType(const std::string& name) const;
@@ -112,196 +146,81 @@ namespace lapis {
 	};
 
 	template<class GEOMETRY>
-	class SingleGeometryWithAttributes {
-	public:
+	class VectorsAndAttributes : public AttributeTable {
 
-		SingleGeometryWithAttributes(std::shared_ptr<AttributeTable> fullAttributeTable, GEOMETRY& geometry, size_t attributeIndex);
-
-		std::vector<std::string> getAllFieldNames() const;
-		FieldType getFieldType(const std::string& name) const;
-		size_t getStringFieldWidth(const std::string& name) const;
-
-		const std::string& getStringField(const std::string& name) const;
-		int64_t getIntegerField(const std::string& name) const;
-		double getRealField(const std::string& name) const;
-		template<class T>
-		T getNumericField(const std::string& name) const;
-
-		void setStringField(const std::string& name, const std::string& value);
-		void setIntegerField(const std::string& name, int64_t value);
-		void setRealField(const std::string& name, double value);
-		template<class T>
-		void setNumericField(const std::string& name, T value);
-
-		const GEOMETRY& getGeometry() const;
 	private:
-		std::shared_ptr<AttributeTable> _fullAttributeTable;
-		GEOMETRY& _geometry;
-		size_t _attributeIndex;
-	};
+		class SingleGeometryWithAttributes;
+		class iterator;
 
-	template<class GEOMETRY>
-	class VectorsAndAttributes {
 	public:
-		VectorsAndAttributes();
+		VectorsAndAttributes() = default;
 		explicit VectorsAndAttributes(const CoordRef& crs);
 		VectorsAndAttributes(const std::string& filename);
+		VectorsAndAttributes(const std::filesystem::path& filename);
 
 		void writeShapefile(const std::filesystem::path& filename);
 
-		void addStringField(const std::string& name, size_t width);
-		void addIntegerField(const std::string& name);
-		void addRealField(const std::string& name);
-		template<class T>
-		void addNumericField(const std::string& name);
-
-		std::vector<std::string> getAllFieldNames() const;
-		FieldType getFieldType(const std::string& name) const;
-		size_t getStringFieldWidth(const std::string& name) const;
-
-		const std::string& getStringField(size_t index, const std::string& name) const;
-		int64_t getIntegerField(size_t index, const std::string& name) const;
-		double getRealField(size_t index, const std::string& name) const;
-		template<class T>
-		T getNumericField(size_t index, const std::string& name) const;
-
-		void setStringField(size_t index, const std::string& name, const std::string& value);
-		void setIntegerField(size_t index, const std::string& name, int64_t value);
-		void setRealField(size_t index, const std::string& name, double value);
-		template<class T>
-		void setNumericField(size_t index, const std::string& name, T value);
-
-		const GEOMETRY& getGeometry(size_t index) const;
-		void addGeometry(const GEOMETRY& g);
-		SingleGeometryWithAttributes<GEOMETRY> getFeature(size_t index);
-		SingleGeometryWithAttributes<GEOMETRY> front();
-		SingleGeometryWithAttributes<GEOMETRY> back();
-
-		const std::shared_ptr<AttributeTable> allAttributes() const;
-
-		const CoordRef& crs() const;
-		CoordRef& crs();
-
-		class iterator {
-		public:
-			iterator(std::shared_ptr<AttributeTable> attributes, std::vector<GEOMETRY>::iterator geomIt, size_t attributeIndex);
-
-			iterator& operator++();
-			bool operator==(const iterator& other) const = default;
-			SingleGeometryWithAttributes<GEOMETRY> operator*();
-		private:
-			std::shared_ptr<AttributeTable> _attributes;
-			size_t _attributeIndex;
-			std::vector<GEOMETRY>::iterator _geomIt;
-		};
 		iterator begin();
 		iterator end();
 
+		const CoordRef& crs() const;
+		void setCrs(const CoordRef& crs);
 
+		const GEOMETRY& getGeometry(size_t index) const;
+		void replaceGeometry(size_t index, const GEOMETRY& geom);
+		void addGeometry(const GEOMETRY& g);
+
+		SingleGeometryWithAttributes getFeature(size_t index);
+		SingleGeometryWithAttributes front();
+		SingleGeometryWithAttributes back();
 	private:
-		std::vector<GEOMETRY> _geometry;
-		std::shared_ptr<AttributeTable> _attributes;
 		CoordRef _crs;
+		std::vector<GEOMETRY> _geometries;
+
+		class SingleGeometryWithAttributes {
+		public:
+			SingleGeometryWithAttributes(AttributeTable& fullAttributeTable, const GEOMETRY& geometry, size_t attributeIndex);
+
+			const GEOMETRY& getGeometry() const;
+
+			const CoordRef& crs() const;
+
+			std::vector<std::string> getAllFieldNames() const;
+			FieldType getFieldType(const std::string& name) const;
+			size_t getStringFieldWidth(const std::string& name) const;
+
+			const std::string& getStringField(const std::string& name) const;
+			int64_t getIntegerField(const std::string& name) const;
+			double getRealField(const std::string& name) const;
+			template<class T>
+			T getNumericField(const std::string& name) const;
+
+			void setStringField(const std::string& name, const std::string& value);
+			void setIntegerField(const std::string& name, int64_t value);
+			void setRealField(const std::string& name, double value);
+			template<class T>
+			void setNumericField(const std::string& name, T value);
+		private:
+			const GEOMETRY& _geometry;
+			AttributeTable& _attributes;
+			size_t _attributeIndex;
+		};
+
+		class iterator {
+		public:
+			iterator(AttributeTable* attributes, std::vector<GEOMETRY>::iterator geomIt, size_t attributeIndex);
+
+			iterator& operator++();
+			bool operator==(const iterator& other) const = default;
+			SingleGeometryWithAttributes operator*();
+		private:
+			AttributeTable* _attributes;
+			size_t _attributeIndex;
+			std::vector<GEOMETRY>::iterator _geomIt;
+		};
+
+		void _constructFromFilename(const std::string& filename);
 	};
-
-	template<class GEOMETRY>
-	inline const GEOMETRY& VectorsAndAttributes<GEOMETRY>::getGeometry(size_t index) const
-	{
-		return _geometry[index];
-	}
-
-	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::addGeometry(const GEOMETRY& g)
-	{
-		_geometry.push_back(g);
-		_attributes->addRow();
-	}
-
-	template<class GEOMETRY>
-	inline SingleGeometryWithAttributes<GEOMETRY> VectorsAndAttributes<GEOMETRY>::getFeature(size_t index)
-	{
-		return SingleGeometryWithAttributes<GEOMETRY>(_attributes, _geometry.at(index), index);
-	}
-
-	template<class GEOMETRY>
-	inline SingleGeometryWithAttributes<GEOMETRY> VectorsAndAttributes<GEOMETRY>::front()
-	{
-		return SingleGeometryWithAttributes<GEOMETRY>(_attributes, _geometry.front(), 0);
-	}
-
-	template<class GEOMETRY>
-	inline SingleGeometryWithAttributes<GEOMETRY> VectorsAndAttributes<GEOMETRY>::back()
-	{
-		return SingleGeometryWithAttributes<GEOMETRY>(_attributes, _geometry.back(), _geometry.size() - 1);
-	}
-
-	template<class GEOMETRY>
-	inline const std::shared_ptr<AttributeTable> VectorsAndAttributes<GEOMETRY>::allAttributes() const
-	{
-		return _attributes;
-	}
-
-	template<class GEOMETRY>
-	inline const CoordRef& VectorsAndAttributes<GEOMETRY>::crs() const
-	{
-		return _crs;
-	}
-	template<class GEOMETRY>
-	inline CoordRef& VectorsAndAttributes<GEOMETRY>::crs()
-	{
-		return _crs;
-	}
-
-	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::iterator VectorsAndAttributes<GEOMETRY>::begin()
-	{
-		return iterator(_attributes, _geometry.begin(), 0);
-	}
-
-	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::iterator VectorsAndAttributes<GEOMETRY>::end()
-	{
-		return iterator(_attributes, _geometry.end(), _geometry.size());
-	}
-
-	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::iterator::iterator(std::shared_ptr<AttributeTable> attributes, std::vector<GEOMETRY>::iterator geomIt, size_t attributeIndex) :
-		_attributes(attributes), _geomIt(geomIt), _attributeIndex(attributeIndex) {}
-
-	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::iterator& VectorsAndAttributes<GEOMETRY>::iterator::operator++()
-	{
-		_attributeIndex++;
-		_geomIt++;
-		return *this;
-	}
-
-	template<class GEOMETRY>
-	inline SingleGeometryWithAttributes<GEOMETRY> VectorsAndAttributes<GEOMETRY>::iterator::operator*()
-	{
-		return SingleGeometryWithAttributes(_attributes, *_geomIt, _attributeIndex);
-	}
-
-	inline const std::string& AttributeTable::FixedWidthString::get() const
-	{
-		return _data;
-	}
-
-	inline void AttributeTable::FixedWidthString::set(const std::string& value, size_t width)
-	{
-		if (value.size() > width) {
-			_data = value.substr(0, width);
-		}
-		else {
-			_data = value + std::string(width - value.size(), '\0');
-		}
-	}
-
-	template<class GEOMETRY>
-	inline const GEOMETRY& SingleGeometryWithAttributes<GEOMETRY>::getGeometry() const
-	{
-		return _geometry;
-	}
 
 	template<class T>
 	inline void AttributeTable::addNumericField(const std::string& name)
@@ -319,7 +238,6 @@ namespace lapis {
 			}();
 		}
 	}
-
 	template<class T>
 	inline T AttributeTable::getNumericField(size_t index, const std::string& name) const
 	{
@@ -337,7 +255,6 @@ namespace lapis {
 			return 0;
 		}
 	}
-
 	template<class T>
 	inline void AttributeTable::setNumericField(size_t index, const std::string& name, T value)
 	{
@@ -354,21 +271,121 @@ namespace lapis {
 			}();
 		}
 	}
-
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::VectorsAndAttributes() : _crs(), _geometry(), _attributes(std::make_shared<AttributeTable>())
+	inline VectorsAndAttributes<GEOMETRY>::VectorsAndAttributes(const CoordRef& crs)
 	{
+		_crs = crs;
 	}
-
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::VectorsAndAttributes(const CoordRef& crs) : 
-		_crs(crs), _geometry(), _attributes(std::make_shared<AttributeTable>())
+	inline VectorsAndAttributes<GEOMETRY>::VectorsAndAttributes(const std::string& filename)
 	{
+		_constructFromFilename(filename);
 	}
-
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::VectorsAndAttributes(const std::string& filename) : 
-		_attributes(std::make_shared<AttributeTable>())
+	inline VectorsAndAttributes<GEOMETRY>::VectorsAndAttributes(const std::filesystem::path& filename)
+	{
+		_constructFromFilename(filename.string());
+	}
+	template<class GEOMETRY>
+	inline void VectorsAndAttributes<GEOMETRY>::writeShapefile(const std::filesystem::path& filename)
+	{
+		gdalAllRegisterThreadSafe();
+		UniqueGdalDataset outshp = gdalCreateWrapper("ESRI Shapefile", filename.string().c_str(), 0, 0, GDT_Unknown);
+		OGRSpatialReference crs;
+		crs.importFromWkt(_crs.getCleanEPSG().getCompleteWKT().c_str());
+
+		OGRLayer* layer = outshp->CreateLayer("layer", &crs, GEOMETRY::gdalGeometryTypeStatic, nullptr);
+
+		for (const auto& fieldName : getAllFieldNames()) {
+			OGRFieldDefn newField = OGRFieldDefn(fieldName.c_str(), OFTString);
+			switch (getFieldType(fieldName)) {
+			case FieldType::String:
+				newField.SetType(OFTString);
+				layer->CreateField(&newField);
+				break;
+			case FieldType::Real:
+				newField.SetType(OFTReal);
+				layer->CreateField(&newField);
+				break;
+			case FieldType::Integer:
+				newField.SetType(OFTInteger64);
+				layer->CreateField(&newField);
+				break;
+			}
+		}
+		for (SingleGeometryWithAttributes feature : *this) {
+			UniqueOGRFeature gdalFeature = createFeatureWrapper(layer);
+			for (const auto& fieldName : getAllFieldNames()) {
+				switch (getFieldType(fieldName)) {
+				case FieldType::String:
+					gdalFeature->SetField(fieldName.c_str(), feature.getStringField(fieldName).c_str());
+					break;
+				case FieldType::Real:
+					gdalFeature->SetField(fieldName.c_str(), feature.getRealField(fieldName));
+					break;
+				case FieldType::Integer:
+					gdalFeature->SetField(fieldName.c_str(), feature.getIntegerField(fieldName));
+					break;
+				}
+			}
+			const GEOMETRY::GdalEquivalent& geometry = feature.getGeometry().gdalGeometry();
+			gdalFeature->SetGeometry(&geometry);
+			layer->CreateFeature(gdalFeature.get());
+		}
+	}
+	template<class GEOMETRY>
+	inline VectorsAndAttributes<GEOMETRY>::iterator VectorsAndAttributes<GEOMETRY>::begin()
+	{
+		return iterator(this, _geometries.begin(), 0);
+	}
+	template<class GEOMETRY>
+	inline VectorsAndAttributes<GEOMETRY>::iterator VectorsAndAttributes<GEOMETRY>::end()
+	{
+		return iterator(this, _geometries.end(), nFeature() - 1);
+	}
+	template<class GEOMETRY>
+	inline const CoordRef& VectorsAndAttributes<GEOMETRY>::crs() const
+	{
+		return _crs;
+	}
+	template<class GEOMETRY>
+	inline void VectorsAndAttributes<GEOMETRY>::setCrs(const CoordRef& crs)
+	{
+		_crs = crs;
+	}
+	template<class GEOMETRY>
+	inline const GEOMETRY& VectorsAndAttributes<GEOMETRY>::getGeometry(size_t index) const
+	{
+		_geometries[index];
+	}
+	template<class GEOMETRY>
+	inline void VectorsAndAttributes<GEOMETRY>::replaceGeometry(size_t index, const GEOMETRY& geom)
+	{
+		_geometries[index] = geom;
+	}
+	template<class GEOMETRY>
+	inline void VectorsAndAttributes<GEOMETRY>::addGeometry(const GEOMETRY& g)
+	{
+		_geometries.push_back(g);
+		addRow();
+	}
+	template<class GEOMETRY>
+	inline VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes VectorsAndAttributes<GEOMETRY>::getFeature(size_t index)
+	{
+		return SingleGeometryWithAttributes(*this, _geometries[index], index);
+	}
+	template<class GEOMETRY>
+	inline VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes VectorsAndAttributes<GEOMETRY>::front()
+	{
+		return getFeature(0);
+	}
+	template<class GEOMETRY>
+	inline VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes VectorsAndAttributes<GEOMETRY>::back()
+	{
+		return getFeature(nFeature() - 1);
+	}
+	template<class GEOMETRY>
+	inline void VectorsAndAttributes<GEOMETRY>::_constructFromFilename(const std::string& filename)
 	{
 		gdalAllRegisterThreadSafe();
 		UniqueGdalDataset shp = vectorGDALWrapper(filename);
@@ -376,7 +393,7 @@ namespace lapis {
 			return;
 		}
 		OGRLayer* layer = shp->GetLayer(0);
-		if (layer->GetGeomType() != GEOMETRY::gdalGeometryType) {
+		if (wkbFlatten(layer->GetGeomType()) != GEOMETRY::gdalGeometryTypeStatic) {
 			throw InvalidVectorFileException(filename + " is not the expected geometry type");
 		}
 		bool initFields = false;
@@ -402,245 +419,117 @@ namespace lapis {
 				initFields = true;
 			}
 			OGRGeometry* gdalGeometry = feature->GetGeometryRef();
-			GEOMETRY myGeometry{ gdalGeometry };
-			addGeometry(myGeometry);
+			GEOMETRY lapisGeometry{ *gdalGeometry };
+			addGeometry(lapisGeometry);
 			for (int i = 0; i < feature->GetFieldCount(); ++i) {
 				OGRFieldDefn* field = feature->GetFieldDefnRef(i);
 				switch (field->GetType()) {
 				case OFTInteger:
 				case OFTInteger64:
-					setIntegerField(_geometry.size() - 1, field->GetNameRef(), feature->GetFieldAsInteger64(field->GetNameRef()));
+					setIntegerField(_geometries.size() - 1, field->GetNameRef(), feature->GetFieldAsInteger64(field->GetNameRef()));
 					break;
 				case OFTReal:
-					setRealField(_geometry.size() - 1, field->GetNameRef(), feature->GetFieldAsDouble(field->GetNameRef()));
+					setRealField(_geometries.size() - 1, field->GetNameRef(), feature->GetFieldAsDouble(field->GetNameRef()));
 					break;
 				case OFTString:
-					setStringField(_geometry.size() - 1, field->GetNameRef(), feature->GetFieldAsString(field->GetNameRef()));
+					setStringField(_geometries.size() - 1, field->GetNameRef(), feature->GetFieldAsString(field->GetNameRef()));
 					break;
 				default:
-					throw std::runtime_error("unimplemented field type when reading shapefile");
+					throw WrongFieldTypeException("Unimplemented field type when reading shapefile");
 				}
 			}
 		}
 		OGRSpatialReference* osr = layer->GetSpatialRef();
-		SharedPJ pj = sharedPJFromOSR(*osr);
-		_crs = CoordRef(pj);
+		_crs = CoordRef(osr);
 	}
 
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::writeShapefile(const std::filesystem::path& filename)
-	{
-		gdalAllRegisterThreadSafe();
-		UniqueGdalDataset outshp = gdalCreateWrapper("ESRI Shapefile", filename.string().c_str(), 0, 0, GDT_Unknown);
-		OGRSpatialReference crs;
-		crs.importFromWkt(_crs.getCleanEPSG().getCompleteWKT().c_str());
-
-		OGRLayer* layer = outshp->CreateLayer("layer", &crs, GEOMETRY::gdalGeometryType, nullptr);
-
-		for (const auto& fieldName : getAllFieldNames()) {
-			OGRFieldDefn newField = OGRFieldDefn(fieldName.c_str(), OFTString);
-			switch(getFieldType(fieldName)) {
-			case FieldType::String:
-				newField.SetType(OFTString);
-				layer->CreateField(&newField);
-				break;
-			case FieldType::Real:
-				newField.SetType(OFTReal);
-				layer->CreateField(&newField);
-				break;
-			case FieldType::Integer:
-				newField.SetType(OFTInteger64);
-				layer->CreateField(&newField);
-				break;
-			}
-		}
-		for (SingleGeometryWithAttributes<GEOMETRY> feature : *this) {
-			UniqueOGRFeature gdalFeature = createFeatureWrapper(layer);
-			for (const auto& fieldName : getAllFieldNames()) {
-				switch (getFieldType(fieldName)) {
-				case FieldType::String:
-					gdalFeature->SetField(fieldName.c_str(), feature.getStringField(fieldName).c_str());
-					break;
-				case FieldType::Real:
-					gdalFeature->SetField(fieldName.c_str(), feature.getRealField(fieldName));
-					break;
-				case FieldType::Integer:
-					gdalFeature->SetField(fieldName.c_str(), feature.getIntegerField(fieldName));
-					break;
-				}
-			}
-			auto geometry = feature.getGeometry().asGdal();
-			gdalFeature->SetGeometry(&geometry);
-			layer->CreateFeature(gdalFeature.get());
-		}
-	}
-
+	inline VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::SingleGeometryWithAttributes
+	(AttributeTable& fullAttributeTable, const GEOMETRY& geometry, size_t attributeIndex)
+		: _attributes(fullAttributeTable), _geometry(geometry), _attributeIndex(attributeIndex)
+	{}
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::addStringField(const std::string& name, size_t width)
+	inline const GEOMETRY& VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getGeometry() const
 	{
-		_attributes->addStringField(name, width);
+		return _geometry;
 	}
-
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::addIntegerField(const std::string& name)
+	inline const CoordRef& VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::crs() const
 	{
-		_attributes->addIntegerField(name);
+		return _geometry.crs();
 	}
-
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::addRealField(const std::string& name)
+	inline std::vector<std::string> VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getAllFieldNames() const
 	{
-		_attributes->addRealField(name);
+		return _attributes.getAllFieldNames();
 	}
-
 	template<class GEOMETRY>
-	inline std::vector<std::string> VectorsAndAttributes<GEOMETRY>::getAllFieldNames() const
+	inline FieldType VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getFieldType(const std::string& name) const
 	{
-		return _attributes->getAllFieldNames();
+		return _attributes.getFieldType(name);
 	}
-
 	template<class GEOMETRY>
-	inline FieldType VectorsAndAttributes<GEOMETRY>::getFieldType(const std::string& name) const
+	inline size_t VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getStringFieldWidth(const std::string& name) const
 	{
-		return _attributes->getFieldType(name);
+		return _attributes.getStringFieldWidth(name);
 	}
-
 	template<class GEOMETRY>
-	inline size_t VectorsAndAttributes<GEOMETRY>::getStringFieldWidth(const std::string& name) const
+	inline const std::string& VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getStringField(const std::string& name) const
 	{
-		return _attributes->getStringFieldWidth(name);
+		return _attributes.getStringField(_attributeIndex, name);
 	}
-
 	template<class GEOMETRY>
-	inline const std::string& VectorsAndAttributes<GEOMETRY>::getStringField(size_t index, const std::string& name) const
+	inline int64_t VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getIntegerField(const std::string& name) const
 	{
-		return _attributes->getStringField(index, name);
+		return _attributes.getIntegerField(_attributeIndex, name);
 	}
-
 	template<class GEOMETRY>
-	inline int64_t VectorsAndAttributes<GEOMETRY>::getIntegerField(size_t index, const std::string& name) const
+	inline double VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getRealField(const std::string& name) const
 	{
-		return _attributes->getIntegerField(index, name);
+		return _attributes.getRealField(_attributeIndex, name);
 	}
-
 	template<class GEOMETRY>
-	inline double VectorsAndAttributes<GEOMETRY>::getRealField(size_t index, const std::string& name) const
+	inline void VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::setStringField(const std::string& name, const std::string& value)
 	{
-		return _attributes->getRealField(index, name);
+		_attributes.setStringField(_attributeIndex, name, value);
 	}
-
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::setStringField(size_t index, const std::string& name, const std::string& value)
+	inline void VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::setIntegerField(const std::string& name, int64_t value)
 	{
-		_attributes->setStringField(index, name, value);
+		_attributes.setIntegerField(_attributeIndex, name, value);
 	}
-
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::setIntegerField(size_t index, const std::string& name, int64_t value)
+	inline void VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::setRealField(const std::string& name, double value)
 	{
-		_attributes->setIntegerField(index, name, value);
+		_attributes.setRealField(_attributeIndex, name, value);
 	}
-
-	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::setRealField(size_t index, const std::string& name, double value)
-	{
-		_attributes->setRealField(index, name, value);
-	}
-
 	template<class GEOMETRY>
 	template<class T>
-	inline void VectorsAndAttributes<GEOMETRY>::addNumericField(const std::string& name)
+	inline T VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getNumericField(const std::string& name) const
 	{
-		_attributes->addNumericField<T>(name);
+		return _attributes.getNumericField<T>(_attributeIndex, name);
 	}
-
 	template<class GEOMETRY>
 	template<class T>
-	inline T VectorsAndAttributes<GEOMETRY>::getNumericField(size_t index, const std::string& name) const
+	inline void VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::setNumericField(const std::string& name, T value)
 	{
-		return _attributes->getNumericField<T>(index, name);
+		_attributes.setNumericField<T>(_attributeIndex, name, value);
 	}
 
 	template<class GEOMETRY>
-	template<class T>
-	inline void VectorsAndAttributes<GEOMETRY>::setNumericField(size_t index, const std::string& name, T value)
-	{
-		_attributes->setNumericField<T>(index, name, value);
-	}
-
+	inline VectorsAndAttributes<GEOMETRY>::iterator::iterator(AttributeTable* attributes, std::vector<GEOMETRY>::iterator geomIt, size_t attributeIndex)
+		: _attributes(attributes), _geomIt(geomIt), _attributeIndex(attributeIndex)
+	{}
 	template<class GEOMETRY>
-	inline SingleGeometryWithAttributes<GEOMETRY>::SingleGeometryWithAttributes
-	(std::shared_ptr<AttributeTable> fullAttributeTable, GEOMETRY& geometry, size_t attributeIndex) :
-		_fullAttributeTable(fullAttributeTable), _geometry(geometry), _attributeIndex(attributeIndex)
+	inline VectorsAndAttributes<GEOMETRY>::iterator& VectorsAndAttributes<GEOMETRY>::iterator::operator++()
 	{
+		_geomIt++;
+		_attributeIndex++;
+		return *this;
 	}
-
 	template<class GEOMETRY>
-	inline std::vector<std::string> SingleGeometryWithAttributes<GEOMETRY>::getAllFieldNames() const
+	inline VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes VectorsAndAttributes<GEOMETRY>::iterator::operator*()
 	{
-		return _fullAttributeTable->getAllFieldNames();
+		return SingleGeometryWithAttributes(*_attributes, *_geomIt, _attributeIndex);
 	}
-
-	template<class GEOMETRY>
-	inline FieldType SingleGeometryWithAttributes<GEOMETRY>::getFieldType(const std::string& name) const
-	{
-		return _fullAttributeTable->getFieldType(name);
-	}
-
-	template<class GEOMETRY>
-	inline size_t SingleGeometryWithAttributes<GEOMETRY>::getStringFieldWidth(const std::string& name) const
-	{
-		return _fullAttributeTable->getStringFieldWidth(name);
-	}
-
-	template<class GEOMETRY>
-	inline const std::string& SingleGeometryWithAttributes<GEOMETRY>::getStringField(const std::string& name) const
-	{
-		return _fullAttributeTable->getStringField(_attributeIndex, name);
-	}
-
-	template<class GEOMETRY>
-	inline int64_t SingleGeometryWithAttributes<GEOMETRY>::getIntegerField(const std::string& name) const
-	{
-		return _fullAttributeTable->getIntegerField(_attributeIndex, name);
-	}
-
-	template<class GEOMETRY>
-	inline double SingleGeometryWithAttributes<GEOMETRY>::getRealField(const std::string& name) const
-	{
-		return _fullAttributeTable->getRealField(_attributeIndex, name);
-	}
-
-	template<class GEOMETRY>
-	inline void SingleGeometryWithAttributes<GEOMETRY>::setStringField(const std::string& name, const std::string& value)
-	{
-		return _fullAttributeTable->setStringField(_attributeIndex, name, value);
-	}
-
-	template<class GEOMETRY>
-	inline void SingleGeometryWithAttributes<GEOMETRY>::setIntegerField(const std::string& name, int64_t value)
-	{
-		_fullAttributeTable->setIntegerField(_attributeIndex, name, value);
-	}
-
-	template<class GEOMETRY>
-	inline void SingleGeometryWithAttributes<GEOMETRY>::setRealField(const std::string& name, double value)
-	{
-		_fullAttributeTable->setRealField(_attributeIndex, name, value);
-	}
-
-	template<class GEOMETRY>
-	template<class T>
-	inline T SingleGeometryWithAttributes<GEOMETRY>::getNumericField(const std::string& name) const
-	{
-		return _fullAttributeTable->getNumericField<T>(_attributeIndex, name);
-	}
-
-	template<class GEOMETRY>
-	template<class T>
-	inline void SingleGeometryWithAttributes<GEOMETRY>::setNumericField(const std::string& name, T value)
-	{
-		_fullAttributeTable->setNumericField<T>(_attributeIndex, name, value);
-	}
-
 }
