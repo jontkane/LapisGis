@@ -341,7 +341,7 @@ namespace lapis {
 	template<class GEOMETRY>
 	inline VectorsAndAttributes<GEOMETRY>::iterator VectorsAndAttributes<GEOMETRY>::end()
 	{
-		return iterator(this, _geometries.end(), nFeature() - 1);
+		return iterator(this, _geometries.end(), nFeature());
 	}
 	template<class GEOMETRY>
 	inline const CoordRef& VectorsAndAttributes<GEOMETRY>::crs() const
