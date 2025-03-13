@@ -36,7 +36,7 @@ namespace lapis {
 		constexpr static OGRwkbGeometryType gdalGeometryTypeStatic = wkbPoint;
 		using GdalEquivalent = OGRPoint;
 
-		Point() = delete;
+		Point() = default;
 		Point(const OGRGeometry& geom);
 		Point(coord_t x, coord_t y);
 		Point(coord_t x, coord_t y, const CoordRef& crs);
@@ -57,7 +57,7 @@ namespace lapis {
 		constexpr static OGRwkbGeometryType gdalGeometryTypeStatic = wkbPolygon;
 		using GdalEquivalent = OGRPolygon;
 
-		Polygon() = delete;
+		Polygon() = default;
 		Polygon(const OGRGeometry& geom);
 		Polygon(const std::vector<CoordXY>& outerRing);
 		Polygon(const std::vector<CoordXY>& outerRing, const CoordRef& crs);
@@ -77,7 +77,7 @@ namespace lapis {
 		constexpr static OGRwkbGeometryType gdalGeometryTypeStatic = wkbMultiPolygon;
 		using GdalEquivalent = OGRMultiPolygon;
 
-		MultiPolygon() = delete;
+		MultiPolygon() = default;
 		MultiPolygon(const OGRGeometry& geom);
 
 		OGRwkbGeometryType gdalGeometryType() const override;
