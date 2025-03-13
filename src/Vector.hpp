@@ -146,17 +146,17 @@ namespace lapis {
 	};
 
 	template<class GEOMETRY>
-	class VectorsAndAttributes : public AttributeTable {
+	class VectorDataset : public AttributeTable {
 
 	private:
-		class SingleGeometryWithAttributes;
+		class Feature;
 		class iterator;
 
 	public:
-		VectorsAndAttributes() = default;
-		explicit VectorsAndAttributes(const CoordRef& crs);
-		VectorsAndAttributes(const std::string& filename);
-		VectorsAndAttributes(const std::filesystem::path& filename);
+		VectorDataset() = default;
+		explicit VectorDataset(const CoordRef& crs);
+		VectorDataset(const std::string& filename);
+		VectorDataset(const std::filesystem::path& filename);
 
 		void writeShapefile(const std::filesystem::path& filename);
 
@@ -170,16 +170,16 @@ namespace lapis {
 		void replaceGeometry(size_t index, const GEOMETRY& geom);
 		void addGeometry(const GEOMETRY& g);
 
-		SingleGeometryWithAttributes getFeature(size_t index);
-		SingleGeometryWithAttributes front();
-		SingleGeometryWithAttributes back();
+		Feature getFeature(size_t index);
+		Feature front();
+		Feature back();
 	private:
 		CoordRef _crs;
 		std::vector<GEOMETRY> _geometries;
 
-		class SingleGeometryWithAttributes {
+		class Feature {
 		public:
-			SingleGeometryWithAttributes(AttributeTable& fullAttributeTable, const GEOMETRY& geometry, size_t attributeIndex);
+			Feature(AttributeTable& fullAttributeTable, const GEOMETRY& geometry, size_t attributeIndex);
 
 			const GEOMETRY& getGeometry() const;
 
@@ -212,7 +212,7 @@ namespace lapis {
 
 			iterator& operator++();
 			bool operator==(const iterator& other) const = default;
-			SingleGeometryWithAttributes operator*();
+			Feature operator*();
 		private:
 			AttributeTable* _attributes;
 			size_t _attributeIndex;
@@ -272,22 +272,22 @@ namespace lapis {
 		}
 	}
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::VectorsAndAttributes(const CoordRef& crs)
+	inline VectorDataset<GEOMETRY>::VectorDataset(const CoordRef& crs)
 	{
 		_crs = crs;
 	}
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::VectorsAndAttributes(const std::string& filename)
+	inline VectorDataset<GEOMETRY>::VectorDataset(const std::string& filename)
 	{
 		_constructFromFilename(filename);
 	}
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::VectorsAndAttributes(const std::filesystem::path& filename)
+	inline VectorDataset<GEOMETRY>::VectorDataset(const std::filesystem::path& filename)
 	{
 		_constructFromFilename(filename.string());
 	}
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::writeShapefile(const std::filesystem::path& filename)
+	inline void VectorDataset<GEOMETRY>::writeShapefile(const std::filesystem::path& filename)
 	{
 		gdalAllRegisterThreadSafe();
 		UniqueGdalDataset outshp = gdalCreateWrapper("ESRI Shapefile", filename.string().c_str(), 0, 0, GDT_Unknown);
@@ -313,7 +313,7 @@ namespace lapis {
 				break;
 			}
 		}
-		for (SingleGeometryWithAttributes feature : *this) {
+		for (Feature feature : *this) {
 			UniqueOGRFeature gdalFeature = createFeatureWrapper(layer);
 			for (const auto& fieldName : getAllFieldNames()) {
 				switch (getFieldType(fieldName)) {
@@ -334,58 +334,58 @@ namespace lapis {
 		}
 	}
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::iterator VectorsAndAttributes<GEOMETRY>::begin()
+	inline VectorDataset<GEOMETRY>::iterator VectorDataset<GEOMETRY>::begin()
 	{
 		return iterator(this, _geometries.begin(), 0);
 	}
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::iterator VectorsAndAttributes<GEOMETRY>::end()
+	inline VectorDataset<GEOMETRY>::iterator VectorDataset<GEOMETRY>::end()
 	{
 		return iterator(this, _geometries.end(), nFeature());
 	}
 	template<class GEOMETRY>
-	inline const CoordRef& VectorsAndAttributes<GEOMETRY>::crs() const
+	inline const CoordRef& VectorDataset<GEOMETRY>::crs() const
 	{
 		return _crs;
 	}
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::setCrs(const CoordRef& crs)
+	inline void VectorDataset<GEOMETRY>::setCrs(const CoordRef& crs)
 	{
 		_crs = crs;
 	}
 	template<class GEOMETRY>
-	inline const GEOMETRY& VectorsAndAttributes<GEOMETRY>::getGeometry(size_t index) const
+	inline const GEOMETRY& VectorDataset<GEOMETRY>::getGeometry(size_t index) const
 	{
 		_geometries[index];
 	}
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::replaceGeometry(size_t index, const GEOMETRY& geom)
+	inline void VectorDataset<GEOMETRY>::replaceGeometry(size_t index, const GEOMETRY& geom)
 	{
 		_geometries[index] = geom;
 	}
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::addGeometry(const GEOMETRY& g)
+	inline void VectorDataset<GEOMETRY>::addGeometry(const GEOMETRY& g)
 	{
 		_geometries.push_back(g);
 		addRow();
 	}
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes VectorsAndAttributes<GEOMETRY>::getFeature(size_t index)
+	inline VectorDataset<GEOMETRY>::Feature VectorDataset<GEOMETRY>::getFeature(size_t index)
 	{
-		return SingleGeometryWithAttributes(*this, _geometries[index], index);
+		return Feature(*this, _geometries[index], index);
 	}
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes VectorsAndAttributes<GEOMETRY>::front()
+	inline VectorDataset<GEOMETRY>::Feature VectorDataset<GEOMETRY>::front()
 	{
 		return getFeature(0);
 	}
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes VectorsAndAttributes<GEOMETRY>::back()
+	inline VectorDataset<GEOMETRY>::Feature VectorDataset<GEOMETRY>::back()
 	{
 		return getFeature(nFeature() - 1);
 	}
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::_constructFromFilename(const std::string& filename)
+	inline void VectorDataset<GEOMETRY>::_constructFromFilename(const std::string& filename)
 	{
 		gdalAllRegisterThreadSafe();
 		UniqueGdalDataset shp = vectorGDALWrapper(filename);
@@ -444,92 +444,92 @@ namespace lapis {
 	}
 
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::SingleGeometryWithAttributes
+	inline VectorDataset<GEOMETRY>::Feature::Feature
 	(AttributeTable& fullAttributeTable, const GEOMETRY& geometry, size_t attributeIndex)
 		: _attributes(fullAttributeTable), _geometry(geometry), _attributeIndex(attributeIndex)
 	{}
 	template<class GEOMETRY>
-	inline const GEOMETRY& VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getGeometry() const
+	inline const GEOMETRY& VectorDataset<GEOMETRY>::Feature::getGeometry() const
 	{
 		return _geometry;
 	}
 	template<class GEOMETRY>
-	inline const CoordRef& VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::crs() const
+	inline const CoordRef& VectorDataset<GEOMETRY>::Feature::crs() const
 	{
 		return _geometry.crs();
 	}
 	template<class GEOMETRY>
-	inline std::vector<std::string> VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getAllFieldNames() const
+	inline std::vector<std::string> VectorDataset<GEOMETRY>::Feature::getAllFieldNames() const
 	{
 		return _attributes.getAllFieldNames();
 	}
 	template<class GEOMETRY>
-	inline FieldType VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getFieldType(const std::string& name) const
+	inline FieldType VectorDataset<GEOMETRY>::Feature::getFieldType(const std::string& name) const
 	{
 		return _attributes.getFieldType(name);
 	}
 	template<class GEOMETRY>
-	inline size_t VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getStringFieldWidth(const std::string& name) const
+	inline size_t VectorDataset<GEOMETRY>::Feature::getStringFieldWidth(const std::string& name) const
 	{
 		return _attributes.getStringFieldWidth(name);
 	}
 	template<class GEOMETRY>
-	inline const std::string& VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getStringField(const std::string& name) const
+	inline const std::string& VectorDataset<GEOMETRY>::Feature::getStringField(const std::string& name) const
 	{
 		return _attributes.getStringField(_attributeIndex, name);
 	}
 	template<class GEOMETRY>
-	inline int64_t VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getIntegerField(const std::string& name) const
+	inline int64_t VectorDataset<GEOMETRY>::Feature::getIntegerField(const std::string& name) const
 	{
 		return _attributes.getIntegerField(_attributeIndex, name);
 	}
 	template<class GEOMETRY>
-	inline double VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getRealField(const std::string& name) const
+	inline double VectorDataset<GEOMETRY>::Feature::getRealField(const std::string& name) const
 	{
 		return _attributes.getRealField(_attributeIndex, name);
 	}
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::setStringField(const std::string& name, const std::string& value)
+	inline void VectorDataset<GEOMETRY>::Feature::setStringField(const std::string& name, const std::string& value)
 	{
 		_attributes.setStringField(_attributeIndex, name, value);
 	}
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::setIntegerField(const std::string& name, int64_t value)
+	inline void VectorDataset<GEOMETRY>::Feature::setIntegerField(const std::string& name, int64_t value)
 	{
 		_attributes.setIntegerField(_attributeIndex, name, value);
 	}
 	template<class GEOMETRY>
-	inline void VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::setRealField(const std::string& name, double value)
+	inline void VectorDataset<GEOMETRY>::Feature::setRealField(const std::string& name, double value)
 	{
 		_attributes.setRealField(_attributeIndex, name, value);
 	}
 	template<class GEOMETRY>
 	template<class T>
-	inline T VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::getNumericField(const std::string& name) const
+	inline T VectorDataset<GEOMETRY>::Feature::getNumericField(const std::string& name) const
 	{
 		return _attributes.getNumericField<T>(_attributeIndex, name);
 	}
 	template<class GEOMETRY>
 	template<class T>
-	inline void VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes::setNumericField(const std::string& name, T value)
+	inline void VectorDataset<GEOMETRY>::Feature::setNumericField(const std::string& name, T value)
 	{
 		_attributes.setNumericField<T>(_attributeIndex, name, value);
 	}
 
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::iterator::iterator(AttributeTable* attributes, std::vector<GEOMETRY>::iterator geomIt, size_t attributeIndex)
+	inline VectorDataset<GEOMETRY>::iterator::iterator(AttributeTable* attributes, std::vector<GEOMETRY>::iterator geomIt, size_t attributeIndex)
 		: _attributes(attributes), _geomIt(geomIt), _attributeIndex(attributeIndex)
 	{}
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::iterator& VectorsAndAttributes<GEOMETRY>::iterator::operator++()
+	inline VectorDataset<GEOMETRY>::iterator& VectorDataset<GEOMETRY>::iterator::operator++()
 	{
 		_geomIt++;
 		_attributeIndex++;
 		return *this;
 	}
 	template<class GEOMETRY>
-	inline VectorsAndAttributes<GEOMETRY>::SingleGeometryWithAttributes VectorsAndAttributes<GEOMETRY>::iterator::operator*()
+	inline VectorDataset<GEOMETRY>::Feature VectorDataset<GEOMETRY>::iterator::operator*()
 	{
-		return SingleGeometryWithAttributes(*_attributes, *_geomIt, _attributeIndex);
+		return Feature(*_attributes, *_geomIt, _attributeIndex);
 	}
 }

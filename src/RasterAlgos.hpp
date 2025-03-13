@@ -571,7 +571,7 @@ namespace lapis {
 	//with the other columns preserved
 
 	template<class T>
-	inline VectorsAndAttributes<MultiPolygon> rasterToMultiPolygonForTaos(const Raster<T>& r,
+	inline VectorDataset<MultiPolygon> rasterToMultiPolygonForTaos(const Raster<T>& r,
 		const AttributeTable* attributes = nullptr) {
 
 		//this algorithm is based on https://www.tandfonline.com/doi/epdf/10.1080/10824000809480639?needAccess=true
@@ -767,7 +767,7 @@ namespace lapis {
 			}
 			return thisMultiPoly;
 			};
-		VectorsAndAttributes<MultiPolygon> outShp{ r.crs() };
+		VectorDataset<MultiPolygon> outShp{ r.crs() };
 		std::unordered_map<T, size_t> attributeRows;
 		if (!attributes) {
 			outShp.addNumericField<T>("ID");

@@ -5,7 +5,7 @@ namespace lapis {
     TEST(VectorTest, pointsConstructor) {
         std::string file = LAPISTESTFILES;
         file += "/testpoints.shp";
-        VectorsAndAttributes<Point> p{ file };
+        VectorDataset<Point> p{ file };
 
         ASSERT_EQ(p.nFeature(), 3);
         ASSERT_EQ(p.getAllFieldNames().size(), 3);
