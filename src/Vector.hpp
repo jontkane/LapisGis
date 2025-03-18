@@ -26,6 +26,8 @@ namespace lapis {
 		const CoordRef& crs() const;
 		void setCrs(const CoordRef& crs);
 
+		virtual ~Geometry() = default;
+
 	protected:
 		CoordRef _crs;
 		Geometry() = default;
@@ -69,10 +71,17 @@ namespace lapis {
 		const OGRGeometry& gdalGeometryGeneric() const override;
 		
 		void addInnerRing(const std::vector<CoordXY>& innerRing);
+
+		std::vector<CoordXY> getOuterRing() const;
+		int nInnerRings() const;
+		std::vector<CoordXY> getInnerRing(int index) const;
 	private:
+		static std::vector<CoordXY> _coordsFromRing(const OGRLinearRing * ring);
 		OGRPolygon _polygon;
 	};
 	class MultiPolygon : public Geometry {
+	private:
+		class iterator;
 	public:
 		constexpr static OGRwkbGeometryType gdalGeometryTypeStatic = wkbMultiPolygon;
 		using GdalEquivalent = OGRMultiPolygon;
@@ -84,9 +93,28 @@ namespace lapis {
 		const OGRMultiPolygon& gdalGeometry() const;
 		const OGRGeometry& gdalGeometryGeneric() const override;
 
+		iterator begin();
+		iterator end();
+
 		void addPolygon(const Polygon& polygon);
+
+		Extent boundingBox() const;
+		bool containsPoint(coord_t x, coord_t y) const;
+		bool containsPoint(CoordXY xy) const;
+		bool containsPoint(Point p) const;
 	private:
 		OGRMultiPolygon _multiPolygon;
+
+		class iterator {
+		public:
+			iterator(OGRMultiPolygon* multiPolygon, size_t index);
+			iterator& operator++();
+			bool operator==(const iterator& other) const = default;
+			Polygon operator*();
+		private:
+			OGRMultiPolygon* _multiPolygon;
+			size_t _index;
+		};
 	};
 
 	enum class FieldType {
@@ -97,6 +125,9 @@ namespace lapis {
 
 	class AttributeTable {
 	public:
+		AttributeTable() = default;
+		virtual ~AttributeTable() = default;
+
 		void addStringField(const std::string& name, size_t width);
 		void addIntegerField(const std::string& name);
 		void addRealField(const std::string& name);

@@ -140,6 +140,27 @@ namespace lapis {
         gdalRing.closeRings();
         _polygon.addRing(&gdalRing);
     }
+    std::vector<CoordXY> Polygon::getOuterRing() const {
+        return _coordsFromRing(_polygon.getExteriorRing());
+    }
+    int Polygon::nInnerRings() const
+    {
+        return _polygon.getNumInteriorRings();
+    }
+    std::vector<CoordXY> Polygon::getInnerRing(int index) const
+    {
+        return _coordsFromRing(_polygon.getInteriorRing(index));
+    }
+    std::vector<CoordXY> Polygon::_coordsFromRing(const OGRLinearRing* ring)
+    {
+        std::vector<CoordXY> out;
+        int nCoords = ring->getNumPoints();
+        out.reserve(nCoords);
+        for (OGRPoint point : ring) {
+            out.emplace_back(point.getX(), point.getY());
+        }
+        return out;
+    }
 
     MultiPolygon::MultiPolygon(const OGRGeometry& geom)
     {
@@ -164,6 +185,44 @@ namespace lapis {
     void MultiPolygon::addPolygon(const Polygon& polygon)
     {
         _multiPolygon.addGeometry(&polygon.gdalGeometry());
+    }
+    MultiPolygon::iterator MultiPolygon::begin() {
+        return iterator(&_multiPolygon, 0);
+    }
+    MultiPolygon::iterator MultiPolygon::end() {
+        return iterator(&_multiPolygon, _multiPolygon.getNumGeometries());
+    }
+    Extent MultiPolygon::boundingBox() const
+    {
+        OGREnvelope g;
+        _multiPolygon.getEnvelope(&g);
+        return Extent{ g.MinX,g.MaxX,g.MinY,g.MaxY,_crs };
+    }
+    bool MultiPolygon::containsPoint(coord_t x, coord_t y) const
+    {
+        OGRPoint p;
+        p.setX(x);
+        p.setY(y);
+        return p.Within(&_multiPolygon);
+    }
+    bool MultiPolygon::containsPoint(CoordXY xy) const
+    {
+        return containsPoint(xy.x, xy.y);
+    }
+    bool MultiPolygon::containsPoint(Point p) const
+    {
+        return containsPoint(p.x(), p.y());
+    }
+
+    MultiPolygon::iterator::iterator(OGRMultiPolygon* multiPolygon, size_t index) : _multiPolygon(multiPolygon), _index(index) {}
+    MultiPolygon::iterator& MultiPolygon::iterator::operator++() {
+        _index++;
+        return *this;
+    }
+    Polygon MultiPolygon::iterator::operator*() {
+        OGRPolygon* poly = _multiPolygon->getGeometryRef((int)_index)->toPolygon();
+        Polygon out{ *poly };
+        return Polygon(*poly);
     }
 
     void AttributeTable::setStringField(size_t index, const std::string& name, const std::string& value)
