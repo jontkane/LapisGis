@@ -14,3 +14,4 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
 include(LapisGis.cmake)
+include(LapisGisTest.cmake)
