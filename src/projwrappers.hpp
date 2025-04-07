@@ -18,6 +18,8 @@ namespace lapis {
 	private:
 		inline static std::unordered_map<std::thread::id, SharedPJCtx> _ctxs;
 		static bool set_proj_db_for_null_context;
+		static bool set_proj_lib;
+		static bool set_proj_data;
 	public:
 		static PJ_CONTEXT* get();
 	};

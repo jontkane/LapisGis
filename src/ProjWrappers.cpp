@@ -10,18 +10,22 @@ namespace lapis {
 		path.resize((size_t)length + 1);
 		wai_getExecutablePath(path.data(), length, nullptr);
 		path[length] = '\0';
-		return std::string(path.begin(), path.end());
+		std::string asString{ path.begin(),path.end() };
+		std::filesystem::path asPath{ asString };
+		return asPath.parent_path().string();
 	}
 
 	PJ_CONTEXT* ProjContextByThread::get()
 	{
+		static std::mutex mut;
+		std::scoped_lock<std::mutex> lock{ mut };
 		std::thread::id thisthread = std::this_thread::get_id();
 		if (!_ctxs.count(thisthread)) {
-			_ctxs[thisthread] = getNewPJContext();
+			_ctxs.emplace(thisthread, getNewPJContext());
 
-			setProjDirectory(executableFilePath(), _ctxs[thisthread].get());
+			setProjDirectory(executableFilePath(), _ctxs.at(thisthread).get());
 		}
-		return _ctxs[thisthread].get();
+		return _ctxs.at(thisthread).get();
 	}
 	SharedPJ makeSharedPJ(PJ* pj)
 	{
@@ -108,4 +112,6 @@ namespace lapis {
 	}
 
 	bool ProjContextByThread::set_proj_db_for_null_context = setProjDirectory(executableFilePath(), nullptr);
+	bool ProjContextByThread::set_proj_lib = _putenv(("PROJ_LIB="+executableFilePath()).c_str());
+	bool ProjContextByThread::set_proj_data = _putenv(("PROJ_DATA=" + executableFilePath()).c_str());
 }
