@@ -25,6 +25,14 @@ namespace lapis {
         _point = *geom.toPoint();
         setCrs(CoordRef(_point.getSpatialReference()));
     }
+    Point::Point(const OGRGeometry& geom, const CoordRef& crs)
+    {
+        if (wkbFlatten(geom.getGeometryType()) != wkbPoint) {
+            throw WrongGeometryTypeException("Wrong geometry; expected Point");
+        }
+        _point = *geom.toPoint();
+        setCrs(crs);
+    }
     Point::Point(coord_t x, coord_t y)
     {
         _point = OGRPoint(x, y);
@@ -77,6 +85,14 @@ namespace lapis {
         }
         _polygon = *geom.toPolygon();
         setCrs(CoordRef(_polygon.getSpatialReference()));
+    }
+    Polygon::Polygon(const OGRGeometry& geom, const CoordRef& crs)
+    {
+        if (wkbFlatten(geom.getGeometryType()) != wkbPolygon) {
+            throw WrongGeometryTypeException("Wrong geometry; expected Polygon");
+        }
+        _polygon = *geom.toPolygon();
+        setCrs(crs);
     }
     Polygon::Polygon(const std::vector<CoordXY>& outerRing)
     {
@@ -151,6 +167,12 @@ namespace lapis {
     {
         return _coordsFromRing(_polygon.getInteriorRing(index));
     }
+    Extent Polygon::boundingBox() const
+    {
+        OGREnvelope g;
+        _polygon.getEnvelope(&g);
+        return Extent{ g.MinX,g.MaxX,g.MinY,g.MaxY,_crs };
+    }
     std::vector<CoordXY> Polygon::_coordsFromRing(const OGRLinearRing* ring)
     {
         std::vector<CoordXY> out;
@@ -169,6 +191,14 @@ namespace lapis {
         }
         _multiPolygon = *geom.toMultiPolygon();
         setCrs(CoordRef(_multiPolygon.getSpatialReference()));
+    }
+    MultiPolygon::MultiPolygon(const OGRGeometry& geom, const CoordRef& crs)
+    {
+        if (wkbFlatten(geom.getGeometryType()) != wkbMultiPolygon) {
+            throw WrongGeometryTypeException("Wrong geometry; expected MultiPolygon");
+        }
+        _multiPolygon = *geom.toMultiPolygon();
+        setCrs(crs);
     }
     OGRwkbGeometryType MultiPolygon::gdalGeometryType() const
     {
@@ -191,6 +221,14 @@ namespace lapis {
     }
     MultiPolygon::iterator MultiPolygon::end() {
         return iterator(&_multiPolygon, _multiPolygon.getNumGeometries());
+    }
+    MultiPolygon::const_iterator MultiPolygon::begin() const
+    {
+        return const_iterator(&_multiPolygon, 0);
+    }
+    MultiPolygon::const_iterator MultiPolygon::end() const
+    {
+        return const_iterator(&_multiPolygon, _multiPolygon.getNumGeometries());
     }
     Extent MultiPolygon::boundingBox() const
     {
@@ -225,6 +263,20 @@ namespace lapis {
         return Polygon(*poly);
     }
 
+    MultiPolygon::const_iterator::const_iterator(const OGRMultiPolygon* multiPolygon, size_t index)
+        : _multiPolygon(multiPolygon), _index(index)
+    {
+    }
+    MultiPolygon::const_iterator& MultiPolygon::const_iterator::operator++() {
+        _index++;
+        return *this;
+    }
+    const Polygon MultiPolygon::const_iterator::operator*() {
+        const OGRPolygon* poly = _multiPolygon->getGeometryRef((int)_index)->toPolygon();
+        Polygon out{ *poly };
+        return Polygon(*poly);
+    }
+
     void AttributeTable::setStringField(size_t index, const std::string& name, const std::string& value)
     {
         if (_fields.at(name).type != FieldType::String) {
@@ -246,6 +298,12 @@ namespace lapis {
             throw WrongFieldTypeException("Wrong field type; expected real");
         }
         _fields.at(name).values.at(index) = value;
+    }
+    void AttributeTable::_reserve(size_t n)
+    {
+        for (auto& [key, value] : _fields) {
+            value.values.reserve(n);
+        }
     }
     void AttributeTable::addStringField(const std::string& name, size_t width)
     {

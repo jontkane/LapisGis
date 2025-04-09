@@ -10,6 +10,7 @@ namespace lapis {
 	constexpr coord_t LAPIS_EPSILON = 0.0001;
 	using intensity_t = uint32_t;
 	using metric_t = float;
+	using band_t = int;
 }
 
 #endif

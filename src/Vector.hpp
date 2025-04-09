@@ -40,6 +40,7 @@ namespace lapis {
 
 		Point() = default;
 		Point(const OGRGeometry& geom);
+		Point(const OGRGeometry& geom, const CoordRef& crs);
 		Point(coord_t x, coord_t y);
 		Point(coord_t x, coord_t y, const CoordRef& crs);
 		Point(CoordXY xy);
@@ -61,6 +62,7 @@ namespace lapis {
 
 		Polygon() = default;
 		Polygon(const OGRGeometry& geom);
+		Polygon(const OGRGeometry& geom, const CoordRef& crs);
 		Polygon(const std::vector<CoordXY>& outerRing);
 		Polygon(const std::vector<CoordXY>& outerRing, const CoordRef& crs);
 		Polygon(const Extent& e);
@@ -75,6 +77,8 @@ namespace lapis {
 		std::vector<CoordXY> getOuterRing() const;
 		int nInnerRings() const;
 		std::vector<CoordXY> getInnerRing(int index) const;
+
+		Extent boundingBox() const;
 	private:
 		static std::vector<CoordXY> _coordsFromRing(const OGRLinearRing * ring);
 		OGRPolygon _polygon;
@@ -82,12 +86,14 @@ namespace lapis {
 	class MultiPolygon : public Geometry {
 	private:
 		class iterator;
+		class const_iterator;
 	public:
 		constexpr static OGRwkbGeometryType gdalGeometryTypeStatic = wkbMultiPolygon;
 		using GdalEquivalent = OGRMultiPolygon;
 
 		MultiPolygon() = default;
 		MultiPolygon(const OGRGeometry& geom);
+		MultiPolygon(const OGRGeometry& geom, const CoordRef& crs);
 
 		OGRwkbGeometryType gdalGeometryType() const override;
 		const OGRMultiPolygon& gdalGeometry() const;
@@ -95,6 +101,8 @@ namespace lapis {
 
 		iterator begin();
 		iterator end();
+		const_iterator begin() const;
+		const_iterator end() const;
 
 		void addPolygon(const Polygon& polygon);
 
@@ -113,6 +121,16 @@ namespace lapis {
 			Polygon operator*();
 		private:
 			OGRMultiPolygon* _multiPolygon;
+			size_t _index;
+		};
+		class const_iterator {
+		public:
+			const_iterator(const OGRMultiPolygon* multiPolygon, size_t index);
+			const_iterator& operator++();
+			bool operator==(const const_iterator& other) const = default;
+			const Polygon operator*();
+		private:
+			const OGRMultiPolygon* _multiPolygon;
 			size_t _index;
 		};
 	};
@@ -154,6 +172,9 @@ namespace lapis {
 		void setRealField(size_t index, const std::string& name, double value);
 		template<class T>
 		void setNumericField(size_t index, const std::string& name, T value);
+
+	protected:
+		virtual void _reserve(size_t n);
 	private:
 
 		class FixedWidthString {
@@ -182,7 +203,7 @@ namespace lapis {
 	private:
 		class Feature;
 		class iterator;
-
+		class const_iterator;
 	public:
 		VectorDataset() = default;
 		explicit VectorDataset(const CoordRef& crs);
@@ -193,6 +214,8 @@ namespace lapis {
 
 		iterator begin();
 		iterator end();
+		const_iterator begin() const;
+		const_iterator end() const;
 
 		const CoordRef& crs() const;
 		void setCrs(const CoordRef& crs);
@@ -204,6 +227,10 @@ namespace lapis {
 		Feature getFeature(size_t index);
 		Feature front();
 		Feature back();
+
+	protected:
+		void _reserve(size_t n) override;
+
 	private:
 		CoordRef _crs;
 		std::vector<GEOMETRY> _geometries;
@@ -248,6 +275,18 @@ namespace lapis {
 			AttributeTable* _attributes;
 			size_t _attributeIndex;
 			std::vector<GEOMETRY>::iterator _geomIt;
+		};
+		class const_iterator {
+		public:
+			const_iterator(const AttributeTable* attributes, std::vector<GEOMETRY>::const_iterator geomIt, size_t attributeIndex);
+
+			const_iterator& operator++();
+			bool operator==(const const_iterator& other) const = default;
+			const Feature operator*();
+		private:
+			const AttributeTable* _attributes;
+			size_t _attributeIndex;
+			std::vector<GEOMETRY>::const_iterator _geomIt;
 		};
 
 		void _constructFromFilename(const std::string& filename);
@@ -375,6 +414,16 @@ namespace lapis {
 		return iterator(this, _geometries.end(), nFeature());
 	}
 	template<class GEOMETRY>
+	inline VectorDataset<GEOMETRY>::const_iterator VectorDataset<GEOMETRY>::begin() const
+	{
+		return const_iterator(this, _geometries.begin(), 0);
+	}
+	template<class GEOMETRY>
+	inline VectorDataset<GEOMETRY>::const_iterator VectorDataset<GEOMETRY>::end() const
+	{
+		return const_iterator(this, _geometries.end(), nFeature());
+	}
+	template<class GEOMETRY>
 	inline const CoordRef& VectorDataset<GEOMETRY>::crs() const
 	{
 		return _crs;
@@ -416,6 +465,12 @@ namespace lapis {
 		return getFeature(nFeature() - 1);
 	}
 	template<class GEOMETRY>
+	inline void VectorDataset<GEOMETRY>::_reserve(size_t n)
+	{
+		_geometries.reserve(n);
+		AttributeTable::_reserve(n);
+	}
+	template<class GEOMETRY>
 	inline void VectorDataset<GEOMETRY>::_constructFromFilename(const std::string& filename)
 	{
 		gdalAllRegisterThreadSafe();
@@ -428,6 +483,10 @@ namespace lapis {
 			throw InvalidVectorFileException(filename + " is not the expected geometry type");
 		}
 		bool initFields = false;
+		_reserve(layer->GetFeatureCount());
+		OGRSpatialReference* osr = layer->GetSpatialRef();
+		_crs = CoordRef(osr);
+
 		for (const OGRFeatureUniquePtr& feature : layer) {
 			if (!initFields) {
 				for (int i = 0; i < feature->GetFieldCount(); ++i) {
@@ -450,7 +509,7 @@ namespace lapis {
 				initFields = true;
 			}
 			OGRGeometry* gdalGeometry = feature->GetGeometryRef();
-			GEOMETRY lapisGeometry{ *gdalGeometry };
+			GEOMETRY lapisGeometry{ *gdalGeometry, _crs };
 			addGeometry(lapisGeometry);
 			for (int i = 0; i < feature->GetFieldCount(); ++i) {
 				OGRFieldDefn* field = feature->GetFieldDefnRef(i);
@@ -470,8 +529,6 @@ namespace lapis {
 				}
 			}
 		}
-		OGRSpatialReference* osr = layer->GetSpatialRef();
-		_crs = CoordRef(osr);
 	}
 
 	template<class GEOMETRY>
@@ -562,5 +619,25 @@ namespace lapis {
 	inline VectorDataset<GEOMETRY>::Feature VectorDataset<GEOMETRY>::iterator::operator*()
 	{
 		return Feature(*_attributes, *_geomIt, _attributeIndex);
+	}
+	template<class GEOMETRY>
+	inline VectorDataset<GEOMETRY>::const_iterator::const_iterator(const AttributeTable* attributes, std::vector<GEOMETRY>::const_iterator geomIt, size_t attributeIndex)
+		: _attributes(attributes), _geomIt(geomIt), _attributeIndex(attributeIndex)
+	{
+	}
+	template<class GEOMETRY>
+	inline VectorDataset<GEOMETRY>::const_iterator& VectorDataset<GEOMETRY>::const_iterator::operator++()
+	{
+		_geomIt++;
+		_attributeIndex++;
+		return *this;
+	}
+	template<class GEOMETRY>
+	inline const VectorDataset<GEOMETRY>::Feature VectorDataset<GEOMETRY>::const_iterator::operator*()
+	{
+		//const_cast is evil, but the Feature being ceated is const so it won't actually be modified
+		AttributeTable* a = const_cast<AttributeTable*>(_attributes);
+		const Feature f = Feature(*a, *_geomIt, _attributeIndex);
+		return f;
 	}
 }

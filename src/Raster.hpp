@@ -12,11 +12,16 @@ namespace lapis {
 	};
 
 	template<class T>
+	class MultiBandRaster;
+
+	template<class T>
 	using RastData = xtl::xoptional_vector<T>;
 
 	template<class T>
 	class Raster : public Alignment {
 	public:
+
+		friend class MultiBandRaster<T>;
 
 		Raster() : Alignment(), _data() {}
 		virtual ~Raster() noexcept = default;
