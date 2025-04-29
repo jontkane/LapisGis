@@ -46,6 +46,10 @@ namespace lapis {
 
 		void _checkBand(band_t band) const;
 	};
+
+	template<class T>
+	MultiBandRaster<T> cropMultiBandRaster(const MultiBandRaster<T>& r, const Extent& e, SnapType snap);
+
 	template<typename T>
 	inline MultiBandRaster<T>::MultiBandRaster(const std::string& filename) {
 		using namespace lapis;
@@ -95,6 +99,7 @@ namespace lapis {
 	inline MultiBandRaster<T>::MultiBandRaster(const Alignment& a, band_t nBands)
 		: Alignment(a)
 	{
+		_bands.reserve(nBands);
 		for (band_t band = 0; band < nBands; ++band) {
 			_bands.emplace_back(a);
 		}
@@ -203,6 +208,16 @@ namespace lapis {
 		if (band < 1 || band > _bands.size()) {
 			throw std::out_of_range("Band out of range");
 		}
+	}
+
+	template<class T>
+	MultiBandRaster<T> cropMultiBandRaster(const MultiBandRaster<T>& r, const Extent& e, SnapType snap)
+	{
+		MultiBandRaster<T> out{ cropAlignment(r,e,snap),r.nBands() };
+		for (band_t i = 1; i <= out.nBands(); ++i) {
+			out.bandAtUnsafe(i) = cropRaster(r.bandAtUnsafe(i), e, snap);
+		}
+		return out;
 	}
 
 }
