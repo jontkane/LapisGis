@@ -30,6 +30,12 @@ namespace lapis {
 		GDALDriver* d = GetGDALDriverManager()->GetDriverByName(driver.c_str());
 		return makeUniqueGdalDataset(d->Create(file.c_str(), ncol, nrow, 1, gdt, nullptr));
 	}
+	UniqueGdalDataset gdalCreateWrapperVector(const std::string& file)
+	{
+		gdalAllRegisterThreadSafe();
+		GDALDriver* d = GetGDALDriverManager()->GetDriverByName("ESRI Shapefile");
+        return makeUniqueGdalDataset(d->Create(file.c_str(), 0, 0, 0, GDT_Unknown, nullptr));
+	}
 	UniqueGdalDataset rasterGDALWrapper(const std::string& filename)
 	{
 		gdalAllRegisterThreadSafe();

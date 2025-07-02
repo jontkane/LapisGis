@@ -2,6 +2,36 @@
 
 namespace lapis {
 
+    static bool pointInGdalRing(const OGRLinearRing* ring, coord_t x, coord_t y) {
+
+        //hoping that this algorithm is faster than gdal's, which is very very slow
+        int nvert = ring->getNumPoints() - 1; //gdal stores the first point twice; but this algorithm cares about the true number of vertices
+        OGRPoint iPoint;
+        OGRPoint jPoint;
+        bool within = false;
+        for (int i = 0, j = nvert-1; i < nvert; j = i++) {
+            ring->getPoint(i, &iPoint);
+            ring->getPoint(j, &jPoint);
+            coord_t ix = iPoint.getX();
+            coord_t iy = iPoint.getY();
+            coord_t jx = jPoint.getX();
+            coord_t jy = jPoint.getY();
+            if (((iy > y) != (jy > y)) &&
+                (x < (jx - ix) * (y - iy) / (jy - iy) + ix)) {
+                within = !within;
+            }
+        }
+        return within;
+    }
+    static bool pointInGdalPolygon(const OGRPolygon* poly, coord_t x, coord_t y) {
+        for (int i = 0; i < poly->getNumInteriorRings(); i++) {
+            if (pointInGdalRing(poly->getInteriorRing(i), x, y)) {
+                return false;
+            }
+        }
+        return pointInGdalRing(poly->getExteriorRing(), x, y);
+    }
+
     WrongGeometryTypeException::WrongGeometryTypeException(const std::string& error) : std::runtime_error(error) {}
     WrongFieldTypeException::WrongFieldTypeException(const std::string& error) : std::runtime_error(error) {}
 
@@ -70,6 +100,11 @@ namespace lapis {
     coord_t Point::y() const
     {
         return _point.getY();
+    }
+
+    Extent Point::boundingBox() const
+    {
+        return Extent(x(), x(), y(), y(), _crs);
     }
 
     static void addPointToRing(OGRLinearRing& ring, coord_t x, coord_t y) {
@@ -173,6 +208,26 @@ namespace lapis {
         _polygon.getEnvelope(&g);
         return Extent{ g.MinX,g.MaxX,g.MinY,g.MaxY,_crs };
     }
+    bool Polygon::containsPoint(coord_t x, coord_t y) const
+    {
+        /*OGRPoint p;
+        p.setX(x);
+        p.setY(y);
+        return p.Within(&_polygon);*/
+        return pointInGdalPolygon(&_polygon, x, y);
+    }
+    bool Polygon::containsPoint(CoordXY xy) const
+    {
+        return containsPoint(xy.x, xy.y);
+    }
+    bool Polygon::containsPoint(Point p) const
+    {
+        return containsPoint(p.x(), p.y());
+    }
+    coord_t Polygon::area() const
+    {
+        return _polygon.get_Area();
+    }
     std::vector<CoordXY> Polygon::_coordsFromRing(const OGRLinearRing* ring)
     {
         std::vector<CoordXY> out;
@@ -186,7 +241,8 @@ namespace lapis {
 
     MultiPolygon::MultiPolygon(const OGRGeometry& geom)
     {
-        if (wkbFlatten(geom.getGeometryType()) != wkbMultiPolygon) {
+        if (wkbFlatten(geom.getGeometryType()) != wkbMultiPolygon
+            && wkbFlatten(geom.getGeometryType()) != wkbPolygon) {
             throw WrongGeometryTypeException("Wrong geometry; expected MultiPolygon");
         }
         _multiPolygon = *geom.toMultiPolygon();
@@ -194,7 +250,8 @@ namespace lapis {
     }
     MultiPolygon::MultiPolygon(const OGRGeometry& geom, const CoordRef& crs)
     {
-        if (wkbFlatten(geom.getGeometryType()) != wkbMultiPolygon) {
+        if (wkbFlatten(geom.getGeometryType()) != wkbMultiPolygon
+            && wkbFlatten(geom.getGeometryType()) != wkbPolygon) {
             throw WrongGeometryTypeException("Wrong geometry; expected MultiPolygon");
         }
         _multiPolygon = *geom.toMultiPolygon();
@@ -238,10 +295,18 @@ namespace lapis {
     }
     bool MultiPolygon::containsPoint(coord_t x, coord_t y) const
     {
-        OGRPoint p;
+        /*OGRPoint p;
         p.setX(x);
         p.setY(y);
-        return p.Within(&_multiPolygon);
+        return p.Within(&_multiPolygon);*/
+        int nPoly = _multiPolygon.getNumGeometries();
+        for (int i = 0; i < _multiPolygon.getNumGeometries(); i++) {
+            const OGRPolygon* poly = _multiPolygon.getGeometryRef(i);
+            if (pointInGdalPolygon(poly, x, y)) {
+                return true;
+            }
+        }
+        return false;
     }
     bool MultiPolygon::containsPoint(CoordXY xy) const
     {

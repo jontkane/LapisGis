@@ -1,7 +1,11 @@
 #pragma once
+#ifndef lapis_vector_h
+#define lapis_vector_h
+
 #include"gis_pch.hpp"
 #include"CoordRef.hpp"
-#include"Raster.hpp"
+#include"QuadExtent.hpp"
+#include"GisExceptions.hpp"
 
 namespace lapis {
 
@@ -22,6 +26,8 @@ namespace lapis {
 		virtual OGRwkbGeometryType gdalGeometryType() const;
 
 		virtual const OGRGeometry& gdalGeometryGeneric() const = 0;
+		
+        virtual Extent boundingBox() const = 0;
 
 		const CoordRef& crs() const;
 		void setCrs(const CoordRef& crs);
@@ -52,6 +58,8 @@ namespace lapis {
 
 		coord_t x() const;
 		coord_t y() const;
+
+        Extent boundingBox() const override;
 	private:
 		OGRPoint _point;
 	};
@@ -78,7 +86,12 @@ namespace lapis {
 		int nInnerRings() const;
 		std::vector<CoordXY> getInnerRing(int index) const;
 
-		Extent boundingBox() const;
+		Extent boundingBox() const override;
+		bool containsPoint(coord_t x, coord_t y) const;
+		bool containsPoint(CoordXY xy) const;
+		bool containsPoint(Point p) const;
+
+		coord_t area() const;
 	private:
 		static std::vector<CoordXY> _coordsFromRing(const OGRLinearRing * ring);
 		OGRPolygon _polygon;
@@ -106,7 +119,7 @@ namespace lapis {
 
 		void addPolygon(const Polygon& polygon);
 
-		Extent boundingBox() const;
+		Extent boundingBox() const override;
 		bool containsPoint(coord_t x, coord_t y) const;
 		bool containsPoint(CoordXY xy) const;
 		bool containsPoint(Point p) const;
@@ -166,12 +179,16 @@ namespace lapis {
 		double getRealField(size_t index, const std::string& name) const;
 		template<class T>
 		T getNumericField(size_t index, const std::string& name) const;
+		template<class T>
+		T getNumericFieldCast(size_t index, const std::string& name) const;
 
 		void setStringField(size_t index, const std::string& name, const std::string& value);
 		void setIntegerField(size_t index, const std::string& name, int64_t value);
 		void setRealField(size_t index, const std::string& name, double value);
 		template<class T>
 		void setNumericField(size_t index, const std::string& name, T value);
+		template<class T>
+		void setNumericFieldCast(size_t index, const std::string& name, T value);
 
 	protected:
 		virtual void _reserve(size_t n);
@@ -222,11 +239,14 @@ namespace lapis {
 
 		const GEOMETRY& getGeometry(size_t index) const;
 		void replaceGeometry(size_t index, const GEOMETRY& geom);
+		void replaceGeometryPreciseExtent(size_t index, const GEOMETRY& geom);
 		void addGeometry(const GEOMETRY& g);
 
 		Feature getFeature(size_t index);
 		Feature front();
 		Feature back();
+
+		const Extent& extent();
 
 	protected:
 		void _reserve(size_t n) override;
@@ -252,12 +272,16 @@ namespace lapis {
 			double getRealField(const std::string& name) const;
 			template<class T>
 			T getNumericField(const std::string& name) const;
+			template<class T>
+			T getNumericFieldCast(const std::string& name) const;
 
 			void setStringField(const std::string& name, const std::string& value);
 			void setIntegerField(const std::string& name, int64_t value);
 			void setRealField(const std::string& name, double value);
 			template<class T>
 			void setNumericField(const std::string& name, T value);
+			template<class T>
+			void setNumericFieldCast(const std::string& name, T value);
 		private:
 			const GEOMETRY& _geometry;
 			AttributeTable& _attributes;
@@ -290,7 +314,12 @@ namespace lapis {
 		};
 
 		void _constructFromFilename(const std::string& filename);
+
+		Extent _extent;
 	};
+
+	template<class GEOMETRY>
+	using Feature = decltype(VectorDataset<GEOMETRY>::front());
 
 	template<class T>
 	inline void AttributeTable::addNumericField(const std::string& name)
@@ -326,6 +355,19 @@ namespace lapis {
 		}
 	}
 	template<class T>
+	inline T AttributeTable::getNumericFieldCast(size_t index, const std::string& name) const
+	{
+		auto type = getFieldType(name);
+		switch (type) {
+		case FieldType::Integer:
+			return (T)getIntegerField(index, name);
+		case FieldType::Real:
+			return (T)getRealField(index, name);
+		default:
+			throw std::runtime_error("Cannot cast field " + name + " to numeric type");
+		}
+	}
+	template<class T>
 	inline void AttributeTable::setNumericField(size_t index, const std::string& name, T value)
 	{
 		if constexpr (std::is_integral<T>()) {
@@ -341,10 +383,26 @@ namespace lapis {
 			}();
 		}
 	}
+	template<class T>
+	inline void AttributeTable::setNumericFieldCast(size_t index, const std::string& name, T value)
+	{
+		auto type = getFieldType(name);
+		switch (type) {
+		case FieldType::Integer:
+			setIntegerField(index, name, (int64_t)value);
+			break;
+		case FieldType::Real:
+			setRealField(index, name, (double)value);
+			break;
+		default:
+			throw std::runtime_error("Cannot cast field " + name + " to numeric type");
+		}
+	}
 	template<class GEOMETRY>
 	inline VectorDataset<GEOMETRY>::VectorDataset(const CoordRef& crs)
 	{
 		_crs = crs;
+		_extent.defineCRS(crs);
 	}
 	template<class GEOMETRY>
 	inline VectorDataset<GEOMETRY>::VectorDataset(const std::string& filename)
@@ -360,7 +418,10 @@ namespace lapis {
 	inline void VectorDataset<GEOMETRY>::writeShapefile(const std::filesystem::path& filename)
 	{
 		gdalAllRegisterThreadSafe();
-		UniqueGdalDataset outshp = gdalCreateWrapper("ESRI Shapefile", filename.string().c_str(), 0, 0, GDT_Unknown);
+		UniqueGdalDataset outshp = gdalCreateWrapperVector(filename.string().c_str());
+		if (!outshp) {
+            throw InvalidVectorFileException("Could not create shapefile " + filename.string());
+		}
 		OGRSpatialReference crs;
 		crs.importFromWkt(_crs.getCleanEPSG().getCompleteWKT().c_str());
 
@@ -436,18 +497,35 @@ namespace lapis {
 	template<class GEOMETRY>
 	inline const GEOMETRY& VectorDataset<GEOMETRY>::getGeometry(size_t index) const
 	{
-		_geometries[index];
+		return _geometries[index];
 	}
 	template<class GEOMETRY>
 	inline void VectorDataset<GEOMETRY>::replaceGeometry(size_t index, const GEOMETRY& geom)
 	{
 		_geometries[index] = geom;
+        _extent = extendExtent(_extent, geom.boundingBox());
 	}
 	template<class GEOMETRY>
 	inline void VectorDataset<GEOMETRY>::addGeometry(const GEOMETRY& g)
 	{
 		_geometries.push_back(g);
 		addRow();
+        _extent = extendExtent(_extent, g.boundingBox());
+	}
+	template<class GEOMETRY>
+	inline void VectorDataset<GEOMETRY>::replaceGeometryPreciseExtent(size_t index, const GEOMETRY& geom)
+	{
+		_geometries[index] = geom;
+		bool init = false;
+		for (const Feature& f : *this) {
+			if (!init) {
+				_extent = f.getGeometry().boundingBox();
+				init = true;
+			}
+			else {
+				_extent = extendExtent(_extent, f.getGeometry().boundingBox());
+			}
+		}
 	}
 	template<class GEOMETRY>
 	inline VectorDataset<GEOMETRY>::Feature VectorDataset<GEOMETRY>::getFeature(size_t index)
@@ -465,6 +543,11 @@ namespace lapis {
 		return getFeature(nFeature() - 1);
 	}
 	template<class GEOMETRY>
+	inline const Extent& VectorDataset<GEOMETRY>::extent()
+	{
+        return _extent;
+	}
+	template<class GEOMETRY>
 	inline void VectorDataset<GEOMETRY>::_reserve(size_t n)
 	{
 		_geometries.reserve(n);
@@ -480,12 +563,20 @@ namespace lapis {
 		}
 		OGRLayer* layer = shp->GetLayer(0);
 		if (wkbFlatten(layer->GetGeomType()) != GEOMETRY::gdalGeometryTypeStatic) {
-			throw InvalidVectorFileException(filename + " is not the expected geometry type");
+			if (wkbFlatten(layer->GetGeomType())==wkbPolygon && GEOMETRY::gdalGeometryTypeStatic == wkbMultiPolygon) {
+                //esri shp files do not have a MultiPolygon type, so this mismatch is common
+			}
+			else {
+				throw InvalidVectorFileException(filename + " is not the expected geometry type");
+			}
 		}
 		bool initFields = false;
 		_reserve(layer->GetFeatureCount());
 		OGRSpatialReference* osr = layer->GetSpatialRef();
 		_crs = CoordRef(osr);
+        OGREnvelope envelope;
+		layer->GetExtent(&envelope);
+        _extent = Extent(envelope.MinX, envelope.MaxX, envelope.MinY, envelope.MaxY);
 
 		for (const OGRFeatureUniquePtr& feature : layer) {
 			if (!initFields) {
@@ -596,6 +687,12 @@ namespace lapis {
 	inline T VectorDataset<GEOMETRY>::Feature::getNumericField(const std::string& name) const
 	{
 		return _attributes.getNumericField<T>(_attributeIndex, name);
+	}	
+	template<class GEOMETRY>
+	template<class T>
+	inline T VectorDataset<GEOMETRY>::Feature::getNumericFieldCast(const std::string& name) const
+	{
+        return _attributes.getNumericFieldCast<T>(_attributeIndex, name);
 	}
 	template<class GEOMETRY>
 	template<class T>
@@ -603,6 +700,14 @@ namespace lapis {
 	{
 		_attributes.setNumericField<T>(_attributeIndex, name, value);
 	}
+	template<class GEOMETRY>
+	template<class T>
+	inline void VectorDataset<GEOMETRY>::Feature::setNumericFieldCast(const std::string& name, T value)
+	{
+        _attributes.setNumericFieldCast<T>(_attributeIndex, name, value);
+	}
+
+
 
 	template<class GEOMETRY>
 	inline VectorDataset<GEOMETRY>::iterator::iterator(AttributeTable* attributes, std::vector<GEOMETRY>::iterator geomIt, size_t attributeIndex)
@@ -641,3 +746,5 @@ namespace lapis {
 		return f;
 	}
 }
+
+#endif

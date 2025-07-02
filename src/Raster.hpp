@@ -4,6 +4,7 @@
 
 #include"gis_pch.hpp"
 #include"Alignment.hpp"
+#include"Vector.hpp"
 
 namespace lapis {
 
@@ -161,7 +162,7 @@ namespace lapis {
 						interp = highvalue;
 					}
 					return interp;
-				};
+					};
 
 				//linear interp between 
 				xtl::xoptional<T> directBelow = linearInterp(xToLeft, xToRight, x, ll, lr);
@@ -215,6 +216,18 @@ namespace lapis {
 		template<class S>
 		Raster<T>& operator/=(const S rhs);
 
+		auto begin() { return _data.begin(); }
+		auto end() { return _data.end(); }
+		auto begin() const { return _data.begin(); }
+		auto end() const { return _data.end(); }
+
+		void maskByVector(const VectorDataset<Polygon>& vect) {
+			_maskByVector<Polygon>(vect);
+		}
+		void maskByVector(const VectorDataset<MultiPolygon>& vect) {
+			_maskByVector<MultiPolygon>(vect);
+		}
+
 	private:
 		RastData<T> _data;
 
@@ -245,6 +258,9 @@ namespace lapis {
 			}
 			return GDT_Unknown;
 		}
+
+		template<class GEOMETRY>
+		void _maskByVector(const VectorDataset<GEOMETRY>& vect);
 	};
 
 	template<class T>
@@ -519,7 +535,7 @@ namespace lapis {
 		if (dataType == GDT_Unknown) {
 			dataType = GDT();
 		}
-		UniqueGdalDataset wgd = gdalCreateWrapper(driver,file,ncol(),nrow(),dataType);
+		UniqueGdalDataset wgd = gdalCreateWrapper(driver, file, ncol(), nrow(), dataType);
 		if (!wgd) {
 			throw InvalidRasterFileException("Unable to open " + file + " as a raster");
 		}
@@ -601,7 +617,7 @@ namespace lapis {
 			dist = std::min(dist, a.ncol() - 1 - col);
 			dist = std::min(dist, a.nrow() - 1 - row);
 			return dist;
-		};
+			};
 
 		for (rowcol_t row = rcExt.minrow; row <= rcExt.maxrow; ++row) {
 			for (rowcol_t col = rcExt.mincol; col <= rcExt.maxcol; ++col) {
@@ -615,7 +631,7 @@ namespace lapis {
 					thisValue.value() = otherValue.value();
 					continue;
 				}
-				
+
 				rowcol_t thisDistFromEdge = distFromEdge(*this, row, col);
 				rowcol_t otherDistFromEdge = distFromEdge(other, row - rcExt.minrow, col - rcExt.mincol);
 				thisValue.value() = thisDistFromEdge <= otherDistFromEdge ? otherValue.value() : thisValue.value();
@@ -729,6 +745,328 @@ namespace lapis {
 		}
 		return *this;
 	}
+
+	template<class T>
+	template<class GEOMETRY>
+	void Raster<T>::_maskByVector(const VectorDataset<GEOMETRY>& vect) {
+		if (!vect.crs().isConsistentHoriz(crs())) {
+			throw CRSMismatchException("CRS mismatch in maskByVector");
+		}
+
+		//step one is to find all cells which the edges of the polygons pass through
+		std::unordered_set<cell_t> cellsOnEdge;
+
+		auto insertCellFromRowCol = [&](rowcol_t row, rowcol_t col) {
+			if (row < 0 || col < 0 || row >= nrow() || col >= ncol()) {
+				return;
+			}
+			cellsOnEdge.insert(cellFromRowColUnsafe(row, col));
+			};
+		auto doOneLineSegment = [&](const OGRPoint& begin, const OGRPoint& end) {
+			coord_t x1 = begin.getX(), y1 = begin.getY();
+			coord_t x2 = end.getX(), y2 = end.getY();
+
+			//first we check if the segment is outside the extent in such a way that it cannot pass through the extent in the middle
+			if (x1 < xmin() && x2 < xmin()) return;
+			if (x1 > xmax() && x2 > xmax()) return;
+			if (y1 < ymin() && y2 < ymin()) return;
+			if (y1 > ymax() && y2 > ymax()) return;
+
+			//x = x1 + t * dx
+			//y = y1 + t * dy
+            coord_t dx = x2 - x1;
+            coord_t dy = y2 - y1;
+			coord_t xDirection = dx < 0 ? -1 : (dx > 0 ? 1 : 0);
+			coord_t yDirection = dy < 0 ? -1 : (dy > 0 ? 1 : 0);
+
+			//first, if either end of the line segment is outside the extent, we need the find the coordinates of the point where it enters/leaves
+			//this will replace the x1/y1 or x2/y2 values
+			//this helper function will update one of the two line segment ends to the point where it intersects the edge of the extent
+			auto updateEndOfSegment = [this](coord_t& thisX, coord_t& thisY, coord_t otherX, coord_t otherY) {
+
+                coord_t dx = otherX - thisX;
+                coord_t dy = otherY - thisY;
+				if (thisX < xmin() || thisX > xmax() || thisY < ymin() || thisY > ymax()) {
+					coord_t tForX = 0, tForY = 0;
+					if (thisX < xmin()) {
+						//solve for t in x1 + t * dx = xmin
+						tForX = (xmin() - thisX) / dx;
+					}
+					else if (thisX > xmax()) {
+						//solve for t in x1 + t * dx = xmax
+						tForX = (xmax() - thisX) / dx;
+					}
+					else {
+						tForX = -1; //a marker that x isn't the problem
+					}
+					if (thisY < ymin()) {
+						//solve for t in y1 + t * dy = ymin
+						tForY = (ymin() - thisY) / dy;
+					}
+					else if (thisY > ymax()) {
+						//solve for t in y1 + t * dy = ymax
+						tForY = (ymax() - thisY) / dy;
+					}
+					else {
+						tForY = -1; //a marker that y isn't the problem
+					}
+
+					coord_t t = 0;
+					if (tForX == -1) {
+						t = tForY;
+					}
+					else if (tForY == -1) {
+						t = tForX;
+					}
+					else {
+						t = std::min(tForX, tForY);
+					}
+					if (t < 0 || t > 1) {
+						return; // the segment never intersects the extent
+					}
+                    thisX = thisX + t * dx;
+                    thisY = thisY + t * dy;
+				}
+				};
+            updateEndOfSegment(x1, y1, x2, y2);
+            updateEndOfSegment(x2, y2, x1, y1);
+
+			//the idea is to find which values of t correspond to the segment entering a new row or new column
+			//the lower value is earlier and is prefered
+			//if the two values are exactly equal, it passes through a corner
+
+			coord_t currentT = 0;
+            coord_t currentX = x1, currentY = y1;
+
+			//there is some risk of an edge case I'm missing making the 'unsafe' functions wonky
+			//however, the result is that a few extra cells will be added to cellsOnEdge,
+			//which has a much lower performace impact than using the safe functions
+			rowcol_t currentCol = colFromXUnsafe(currentX);
+            rowcol_t currentRow = rowFromYUnsafe(currentY);
+			insertCellFromRowCol(currentRow, currentCol);
+
+			bool xExactlyOnEdge = std::abs(currentX - (xFromColUnsafe(currentCol) - xres() / 2)) < LAPIS_EPSILON;
+            bool yExactlyOnEdge = std::abs(currentY - (yFromRowUnsafe(currentRow) + yres() / 2)) < LAPIS_EPSILON;
+			if (xExactlyOnEdge) {
+				insertCellFromRowCol(currentRow, currentCol - 1);
+			}
+			if (yExactlyOnEdge) {
+				insertCellFromRowCol(currentRow - 1, currentCol);
+            }
+			if (xExactlyOnEdge && yExactlyOnEdge) {
+				insertCellFromRowCol(currentRow - 1, currentCol - 1);
+			}
+
+			while (currentT < 1) {
+				coord_t targetX, targetY;
+				//we need to account for which direction we're going to know where the next cell intersection might be
+				if (xDirection > 0) {
+					targetX = xFromColUnsafe(currentCol + 1) - xres() / 2;
+				}
+				else if (xDirection < 0) {
+					targetX = xFromColUnsafe(currentCol - 1) + xres() / 2;
+				}
+				//if xDirection==0, then it's a vertical line and there is no targetX; this is handled below
+
+				if (yDirection > 0) {
+					//remembering my old nemesis, that an increasing Y value is a decreasing row
+					targetY = yFromRowUnsafe(currentRow - 1) - yres() / 2;
+				}
+				else if (yDirection < 0) {
+					targetY = yFromRowUnsafe(currentRow + 1) + yres() / 2;
+				}
+
+				coord_t tForX, tForY;
+				if (xDirection == 0) {
+					tForX = std::numeric_limits<coord_t>::max();
+				}
+				else {
+					tForX = (targetX - x1) / dx;
+				}
+				if (yDirection == 0) {
+					tForY = std::numeric_limits<coord_t>::max();
+				}
+				else {
+					tForY = (targetY - y1) / dy;
+				}
+
+				if (std::min(tForX, tForY) > 1) {
+					return; //the next intersection is past the edge of the line segment
+				}
+
+				if (tForX < tForY) {
+					currentT = tForX;
+					currentX = x1 + currentT * dx;
+					currentY = y1 + currentT * dy;
+					//currentRow doesn't change
+					currentCol += xDirection; //increases if dx is positive, decreases if dx is negative
+					if (currentCol < 0 || currentCol >= ncol()) {
+						return; //the line segment has exited the extent, and we're done
+					}
+					insertCellFromRowCol(currentRow, currentCol);
+				}
+				else if (tForY < tForX) {
+					currentT = tForY;
+					currentX = x1 + currentT * dx;
+					currentY = y1 + currentT * dy;
+					currentRow -= yDirection; //again, rows go in the opposite direction from Y
+					//currentCol doesn't change
+					if (currentRow < 0 || currentRow >= nrow()) {
+						return;
+					}
+					insertCellFromRowCol(currentRow, currentCol);
+				}
+				else {
+					//we hit the exact corner where four cells meet
+					currentT = tForX;
+					currentX = x1 + currentT * dx;
+					currentY = y1 + currentT * dy;
+
+					//we need to add three cells
+					insertCellFromRowCol(currentRow, currentCol + xDirection);
+					insertCellFromRowCol(currentRow - yDirection, currentCol);
+
+					currentRow -= yDirection;
+					currentCol += xDirection;
+					insertCellFromRowCol(currentRow, currentCol);
+				}
+
+				if (yExactlyOnEdge && yDirection == 0) { //horizontal line exactly following the cell boundary
+					insertCellFromRowCol(currentRow - 1, currentCol);
+				}
+				if (xExactlyOnEdge && xDirection == 0) { //vertical line exactly following the cell boundary
+					insertCellFromRowCol(currentRow, currentCol - 1);
+                }
+			}
+
+			};
+		auto doOneRing = [&](const OGRLinearRing* ring) {
+			for (int i = 0; i < ring->getNumPoints() - 1; ++i) {
+				OGRPoint begin, end;
+				ring->getPoint(i, &begin);
+				ring->getPoint(i + 1, &end);
+				doOneLineSegment(begin, end);
+			}
+			};
+		auto doOnePolygon = [&](const OGRPolygon& poly) {
+			doOneRing(poly.getExteriorRing());
+			for (int i = 0; i < poly.getNumInteriorRings(); ++i) {
+				doOneRing(poly.getInteriorRing(i));
+			}
+			};
+
+		if constexpr (std::is_same<GEOMETRY, Polygon>()) {
+			for (const auto& feature : vect) {
+				const GEOMETRY& geom = feature.getGeometry();
+				const OGRPolygon& asGdal = geom.gdalGeometry();
+				doOnePolygon(asGdal);
+			}
+		}
+		else if constexpr (std::is_same<GEOMETRY, MultiPolygon>()) {
+			for (const auto& feature : vect) {
+                const GEOMETRY& geom = feature.getGeometry();
+				for (Polygon poly : geom) {
+					const OGRPolygon& asGdal = poly.gdalGeometry();
+                    doOnePolygon(asGdal);
+				}
+			}
+		}
+		else {
+			[] <bool flag = false>()
+			{
+				static_assert(flag, "Unsupported geometry type in maskByVector");
+			}();
+		}
+
+
+		//test code for visualizing the cells marked as edge
+		/*for (cell_t cell : CellIterator(*this)) {
+            atCellUnsafe(cell).has_value() = cellsOnEdge.contains(cell);
+		}*/
+
+		Raster<bool> inPolygon{ (Alignment)*this };
+		
+		auto isCellInVect = [&](cell_t cell)->bool {
+            coord_t x = xFromCellUnsafe(cell);
+            coord_t y = yFromCellUnsafe(cell);
+			for (const auto& feature : vect) {
+				const GEOMETRY& geom = feature.getGeometry();
+				if (geom.containsPoint(x, y)) {
+					return true;
+				}
+			}
+			return false;
+			};
+		auto handleCell = [&](cell_t cell, bool within) {
+			auto vThis = atCellUnsafe(cell);
+            auto vInPoly = inPolygon.atCellUnsafe(cell);
+			vInPoly.value() = within;
+			if (!within) {
+				vThis.has_value() = false;
+			}
+			};
+
+		//the core idea is to do a full check on any cell in cellsOnEdge
+		//any cell not in cellsOnEdge, we copy whether it's inside or outside from the cells to the left and above, unless they're on the edge
+		//if both are on the edge (so we're in a corner), we have to do another manual check
+        //the theory here is that a region cannot flip from inside to outside or vice versa without crossing the egde of the vector
+
+		//special-casing the upperleft cell
+		handleCell(0, isCellInVect(0));
+		
+		//special-casing the rest of the first row
+		for (rowcol_t col = 1; col < ncol(); ++col) {
+			cell_t cell = cellFromRowColUnsafe(0, col);
+            cell_t leftCell = cellFromRowColUnsafe(0, col - 1);
+			if (cellsOnEdge.contains(cell)) {
+				handleCell(cell, isCellInVect(cell));
+			}
+			else if (cellsOnEdge.contains(leftCell)) { //you can't copy a value from an edge cell
+				handleCell(cell, isCellInVect(cell));
+			}
+			else {
+				handleCell(cell, inPolygon.atCellUnsafe(leftCell).value());
+            }
+		}
+
+		for (rowcol_t row = 1; row < nrow(); ++row) {
+			{
+				//special-casing the first cell in each row
+				cell_t cell = cellFromRowColUnsafe(row, 0);
+				cell_t aboveCell = cellFromRowColUnsafe(row - 1, 0);
+				if (cellsOnEdge.contains(cell)) {
+					handleCell(cell, isCellInVect(cell));
+				}
+				else if (cellsOnEdge.contains(aboveCell)) {
+					handleCell(cell, isCellInVect(cell));
+				}
+				else {
+					handleCell(cell, inPolygon.atCellUnsafe(aboveCell).value());
+				}
+			}
+			
+			//finally, the non-special cases
+			for (rowcol_t col = 1; col < ncol(); ++col)  {
+                cell_t cell = cellFromRowColUnsafe(row, col);
+                cell_t aboveCell = cellFromRowColUnsafe(row - 1, col);
+                cell_t leftCell = cellFromRowColUnsafe(row, col - 1);
+				if (cellsOnEdge.contains(cell)) {
+                    handleCell(cell, isCellInVect(cell));
+				}
+				else if (!cellsOnEdge.contains(aboveCell)) {
+                    handleCell(cell, inPolygon.atCellUnsafe(aboveCell).value());
+				}
+				else if (!cellsOnEdge.contains(leftCell)) {
+                    handleCell(cell, inPolygon.atCellUnsafe(leftCell).value());
+				}
+				else { //we're in a corner, so we have to do a manual check
+                    handleCell(cell, isCellInVect(cell));
+				}
+			}
+		}
+
+	}
+	
 }
 
 #endif
