@@ -15,7 +15,7 @@ namespace lapis {
 
 	using UniqueGdalDataset = std::unique_ptr<GDALDataset, void(*)(GDALDataset*)>;
 	UniqueGdalDataset makeUniqueGdalDataset(GDALDataset* p);
-	UniqueGdalDataset gdalCreateWrapper(const std::string& driver, const std::string& file, int ncol, int nrow, GDALDataType gdt);
+	UniqueGdalDataset gdalCreateWrapperRaster(const std::string& driver, const std::string& file, int ncol, int nrow, GDALDataType gdt);
 	UniqueGdalDataset gdalCreateWrapperVector(const std::string& file);
 	UniqueGdalDataset rasterGDALWrapper(const std::string& filename);
 	UniqueGdalDataset vectorGDALWrapper(const std::string& filename);

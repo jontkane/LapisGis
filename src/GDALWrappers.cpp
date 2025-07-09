@@ -24,7 +24,7 @@ namespace lapis {
 			}
 		);
 	}
-	UniqueGdalDataset gdalCreateWrapper(const std::string& driver, const std::string& file, int ncol, int nrow, GDALDataType gdt)
+	UniqueGdalDataset gdalCreateWrapperRaster(const std::string& driver, const std::string& file, int ncol, int nrow, GDALDataType gdt)
 	{
 		gdalAllRegisterThreadSafe();
 		GDALDriver* d = GetGDALDriverManager()->GetDriverByName(driver.c_str());

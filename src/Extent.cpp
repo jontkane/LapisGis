@@ -48,6 +48,9 @@ namespace lapis {
 			if (wgd) {
 				OGREnvelope envelope{};
 				auto layer = wgd->GetLayer(0);
+				if (!layer) {
+					throw InvalidVectorFileException("Unable to open " + filename + " as an extent");
+                }
 				auto errcode = layer->GetExtent(&envelope);
 				if (errcode != OGRERR_NONE) {
 					throw InvalidVectorFileException("Unable to open " + filename + " as an extent");
