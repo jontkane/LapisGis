@@ -43,6 +43,7 @@ namespace lapis {
 		template<class T>
 		void addNumericField(const std::string& name);
 		void removeField(const std::string& name);
+        bool fieldExists(const std::string& name) const;
 
         void resize(size_t nrow);
 		void addRow();
@@ -124,6 +125,7 @@ namespace lapis {
 		std::vector<std::string> getAllFieldNames() const;
 		FieldType getFieldType(const std::string& name) const;
 		size_t getStringFieldWidth(const std::string& name) const;
+		bool fieldExists(const std::string& name) const;
 
 		const std::string& getStringField(const std::string& name) const;
 		int64_t getIntegerField(const std::string& name) const;
@@ -145,9 +147,11 @@ namespace lapis {
             _attributes->setNumericField<T>(_index, name, value);
 		}
 
-		operator AttributeRow<const attribute_pointer>() const {
-            return AttributeRow<const attribute_pointer>(_attributes, _index);
+        using const_attribute_pointer = std::add_const_t<std::remove_pointer_t<attribute_pointer>>*;
+		operator AttributeRow<const_attribute_pointer>() const {
+            return AttributeRow<const_attribute_pointer>(_attributes, _index);
 		}
+
 	private:
 		attribute_pointer _attributes;
         size_t _index;
@@ -180,6 +184,7 @@ namespace lapis {
 		template<class T>
 		void addNumericField(const std::string& name);
 		void removeField(const std::string& name);
+		bool fieldExists(const std::string& name) const;
 
 		const GEOM& getGeometry(size_t index) const;
 		void replaceGeometry(size_t index, const GEOM& geom);
@@ -258,6 +263,7 @@ namespace lapis {
 		std::vector<std::string> getAllFieldNames() const;
 		FieldType getFieldType(const std::string& name) const;
 		size_t getStringFieldWidth(const std::string& name) const;
+		bool fieldExists(const std::string& name) const;
 
 		const std::string& getStringField(const std::string& name) const;
 		int64_t getIntegerField(const std::string& name) const;
@@ -279,16 +285,17 @@ namespace lapis {
             _attributeRow.setNumericField<T>(name, value);
 		}
 
-		operator Feature<GEOM, const attribute_pointer>() const {
-            return Feature<GEOM, const attribute_pointer>(static_cast<ConstAttributeRow>(_attributeRow), _geometry);
+        using const_attribute_pointer = std::add_const_t<std::remove_pointer_t<attribute_pointer>>*;
+		operator Feature<GEOM, const_attribute_pointer>() const {
+            return Feature<GEOM, const_attribute_pointer>(static_cast<ConstAttributeRow>(_attributeRow), _geometry);
 		}
 
-		operator AttributeRow<attribute_pointer>() const {
+		operator AttributeRow<attribute_pointer>() const requires !is_const {
             return _attributeRow;
 		}
 
-		operator AttributeRow<const attribute_pointer>() const {
-            return static_cast<AttributeRow<const attribute_pointer>>(_attributeRow);
+		operator AttributeRow<const_attribute_pointer>() const {
+            return static_cast<AttributeRow<const_attribute_pointer>>(_attributeRow);
         }
 
 
@@ -380,6 +387,10 @@ namespace lapis {
 	{
 		return _attributes->getStringFieldWidth(name);
 	}
+	template<class attribute_pointer>
+	inline bool AttributeRow<attribute_pointer>::fieldExists(const std::string& name) const {
+        return _attributes->fieldExists(name);
+	}
 
     template<class attribute_pointer>
 	inline const std::string& AttributeRow<attribute_pointer>::getStringField(const std::string& name) const
@@ -422,7 +433,7 @@ namespace lapis {
 				//esri shp files do not have a MultiPolygon type, so this mismatch is common
 			}
 			else {
-				throw InvalidVectorFileException(filename + " is not the expected geometry type");
+				throw WrongGeometryTypeException(filename + " is not the expected geometry type");
 			}
 		}
 		bool initFields = false;
@@ -640,6 +651,10 @@ namespace lapis {
 	{
 		_attributes.setStringFieldWidth(name, width);
 	}
+	template<class GEOM>
+	inline bool VectorDataset<GEOM>::fieldExists(const std::string& name) const {
+        return _attributes.fieldExists(name);
+	}
 
     template<class GEOM>
 	inline const std::string& VectorDataset<GEOM>::getStringField(size_t index, const std::string& name) const
@@ -793,6 +808,10 @@ namespace lapis {
 	inline size_t Feature<GEOM, attribute_pointer>::getStringFieldWidth(const std::string& name) const
 	{
 		return _attributeRow.getStringFieldWidth(name);
+	}
+	template<class GEOM, class attribute_pointer>
+	inline bool Feature<GEOM, attribute_pointer>::fieldExists(const std::string& name) const {
+        return _attributeRow.fieldExists(name);
 	}
 
     template<class GEOM, class attribute_pointer>

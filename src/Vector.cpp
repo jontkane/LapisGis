@@ -94,6 +94,11 @@ namespace lapis {
         }
     }
 
+    bool AttributeTable::fieldExists(const std::string& name) const
+    {
+        return _fields.contains(name);
+    }
+
     void AttributeTable::resize(size_t nrow) {
         _nrow = nrow;
         for (auto& keyValue : _fields) {
