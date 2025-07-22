@@ -3,7 +3,7 @@
 
 namespace lapis{
 	TEST(LasReaderTest, getPoints) {
-		std::string file = LAPISTESTFILES;
+		std::string file = LAPISGISTESTFILES;
 		file = file + "testlaz14.laz";
 		LasReader lr{ file };
 
@@ -27,7 +27,7 @@ namespace lapis{
 	}
 
 	TEST(LasReaderTest, largeFile) {
-		std::string file = std::string(LAPISTESTFILES) + "largelaz.laz";
+		std::string file = std::string(LAPISGISTESTFILES) + "largelaz.laz";
 		
 		LasReader lr{ file };
 		
@@ -37,7 +37,7 @@ namespace lapis{
 	}
 
 	TEST(LasReaderTest, filterFirstReturns) {
-		std::string file = LAPISTESTFILES;
+		std::string file = LAPISGISTESTFILES;
 		file = file + "testlaz14.laz";
 		LasReader lr{ file };
 
@@ -48,7 +48,7 @@ namespace lapis{
 	}
 
 	TEST(LasReaderTest, classWhiteList) {
-		std::string file = LAPISTESTFILES;
+		std::string file = LAPISGISTESTFILES;
 		file = file + "testlaz14.laz";
 		LasReader lr{ file };
 
@@ -59,7 +59,7 @@ namespace lapis{
 	}
 
 	TEST(LasReaderTest, classBlackList) {
-		std::string file = LAPISTESTFILES;
+		std::string file = LAPISGISTESTFILES;
 		file = file + "testlaz14.laz";
 		LasReader lr = LasReader(file);
 
@@ -70,7 +70,7 @@ namespace lapis{
 	}
 
 	TEST(LasReaderTest, withheld) {
-		std::string file = LAPISTESTFILES;
+		std::string file = LAPISGISTESTFILES;
 		file = file + "testwithwithheld.laz";
 		LasReader lr = LasReader(file);
 		lr.addFilter(std::make_shared<LasFilterWithheld>());

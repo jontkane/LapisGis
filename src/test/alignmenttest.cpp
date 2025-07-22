@@ -57,7 +57,7 @@ namespace lapis {
 	}
 
 	TEST(AlignmentTest, fromFile) {
-		std::string testfilefolder = std::string(LAPISTESTFILES);
+		std::string testfilefolder = std::string(LAPISGISTESTFILES);
 		Alignment a{ testfilefolder + "testraster.img" };
 		verifyAlignment(a, Extent(testfilefolder + "testraster.img"), 29, 132);
 	}

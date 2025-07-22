@@ -3,7 +3,7 @@
 
 namespace lapis {
     TEST(VectorTest, pointsConstructor) {
-        std::string file = LAPISTESTFILES;
+        std::string file = LAPISGISTESTFILES;
         file += "/testpoints.shp";
         VectorDataset<Point> p{ file };
 

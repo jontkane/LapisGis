@@ -3,7 +3,7 @@
 
 namespace lapis {
 	TEST(CoordRefTest, constructor) {
-		std::string testfilefolder = std::string(LAPISTESTFILES);
+		std::string testfilefolder = std::string(LAPISGISTESTFILES);
 		std::vector<std::string> sources = {
 		""
 		, "EPSG:2927"

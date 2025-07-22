@@ -19,7 +19,7 @@ namespace lapis {
 	}
 
 	TEST(ExtentTest, constructFromFile) {
-		std::string testfilefolder = std::string(LAPISTESTFILES);
+		std::string testfilefolder = std::string(LAPISGISTESTFILES);
 		std::vector<std::string> sources{
 			testfilefolder + "testlaz10.laz" // EPSG 2927+Unknown
 			, testfilefolder + "testlaz14.laz" // EPSG 6340+5703

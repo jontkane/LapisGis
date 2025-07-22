@@ -12,7 +12,7 @@
 //extra bytes
 namespace lapis {
 	TEST(LasIOTest, laz10) {
-		std::string testfilefolder = std::string(LAPISTESTFILES);
+		std::string testfilefolder = std::string(LAPISGISTESTFILES);
 		LasIO laz{ testfilefolder + "testlaz10.laz" };
 
 		auto& h = laz.header;
@@ -78,7 +78,7 @@ namespace lapis {
 	}
 
 	TEST(LasIOTest, laz14) {
-		std::string testfilefolder = std::string(LAPISTESTFILES);
+		std::string testfilefolder = std::string(LAPISGISTESTFILES);
 		LasIO laz{ testfilefolder + "testlaz14.laz" };
 
 		auto& h = laz.header;

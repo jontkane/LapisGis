@@ -36,7 +36,7 @@ namespace lapis {
 	}
 
 	TEST_F(RasterTest, constructorFromFile) {
-		std::string file = LAPISTESTFILES;
+		std::string file = LAPISGISTESTFILES;
 		file += "/testraster.img";
 		Raster<int> r{ file };
 		EXPECT_FALSE(r[0].has_value());
@@ -180,7 +180,7 @@ namespace lapis {
 	}
 
 	TEST_F(RasterTest, writeRaster) {
-		std::string dir = LAPISTESTFILES;
+		std::string dir = LAPISGISTESTFILES;
 		Raster<int> r{ dir + "/testraster.img" };
 		r.writeRaster(dir + "/testraster.tif");
 		Raster<int> r2{ dir + "/testraster.tif" };
