@@ -175,8 +175,8 @@ namespace lapis {
 		VectorDataset(const std::string& filename);
 		explicit VectorDataset(const std::filesystem::path& filename);
 
-		void writeShapefile(const std::filesystem::path& filename);
-		void writeShapefile(const std::string& filename);
+		void writeShapefile(const std::filesystem::path& filename) const;
+		void writeShapefile(const std::string& filename) const;
 
 		void addStringField(const std::string& name, size_t width);
 		void addIntegerField(const std::string& name);
@@ -211,6 +211,9 @@ namespace lapis {
 		void setRealField(size_t index, const std::string& name, double value);
 		template<class T>
 		void setNumericField(size_t index, const std::string& name, T value);
+
+		AttributeTable& attributes();
+        const AttributeTable& attributes() const;
 
 
 		template<class attribute_pointer>
@@ -494,7 +497,7 @@ namespace lapis {
     }
 
     template<class GEOM>
-	inline void VectorDataset<GEOM>::writeShapefile(const std::string& filename)
+	inline void VectorDataset<GEOM>::writeShapefile(const std::string& filename) const
 	{
 		gdalAllRegisterThreadSafe();
 		UniqueGdalDataset outshp = gdalCreateWrapperVector(filename.c_str());
@@ -544,7 +547,7 @@ namespace lapis {
 		}
 	}
     template<class GEOM>
-	inline void VectorDataset<GEOM>::writeShapefile(const std::filesystem::path& filename)
+	inline void VectorDataset<GEOM>::writeShapefile(const std::filesystem::path& filename) const
 	{
 		writeShapefile(filename.string());
 	}
@@ -698,6 +701,15 @@ namespace lapis {
 	inline void VectorDataset<GEOM>::setNumericField(size_t index, const std::string& name, T value)
 	{
         _attributes.setNumericField<T>(index, name, value);
+	}
+
+	template<class GEOM>
+	inline AttributeTable& VectorDataset<GEOM>::attributes() {
+        return _attributes;
+	}
+	template<class GEOM>
+	inline const AttributeTable& VectorDataset<GEOM>::attributes() const {
+		return _attributes;
 	}
 
     template<class GEOM>
