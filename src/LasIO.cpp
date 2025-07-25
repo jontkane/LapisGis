@@ -12,8 +12,6 @@ namespace lapis {
 
 		_readHeader();
 
-		
-
 		ifs.seekg(header.HeaderSize, std::ios_base::beg);
 
 		_readVLRs<std::uint16_t>(header.NumberOfVLRs, header.OffsetToPointData);
@@ -118,12 +116,13 @@ namespace lapis {
 		if (version != 0) {
 			throw InvalidLasFileException("Unsupported laz chunk type. This is usually due to a corrupted file. Try re-downloading or re-copying it if possible.");
 		}
+		if (numChunks == 0) {
+            throw InvalidLasFileException("No chunks found in laz file. This is usually due to a corrupted file. Try re-downloading or re-copying it if possible.");
+		}
 
 		bool variable = vlrs.compressionInfo.chunk_size == lazperf::VariableChunkSize;
-		if (numChunks) {
-			lazperf::InputCb cb{ std::bind(&LasIO::getBytes,this, std::placeholders::_1,std::placeholders::_2) };
-			_chunks = lazperf::decompress_chunk_table(cb, numChunks, variable);
-		}
+		lazperf::InputCb cb{ std::bind(&LasIO::getBytes,this, std::placeholders::_1,std::placeholders::_2) };
+		_chunks = lazperf::decompress_chunk_table(cb, numChunks, variable);
 
 		if (!variable)
 		{
