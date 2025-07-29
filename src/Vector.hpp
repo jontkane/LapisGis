@@ -587,12 +587,18 @@ namespace lapis {
 	template<class GEOM>
 	inline void VectorDataset<GEOM>::replaceGeometry(size_t index, const GEOM& geom)
 	{
+		if (!_extent.crs().isConsistent(geom.crs())) {
+			throw CRSMismatchException("Geometry CRS does not match dataset CRS");
+        }
 		_geometries[index] = geom;
         _extent = extendExtent(_extent, geom.boundingBox());
 	}
 	template<class GEOM>
 	inline void VectorDataset<GEOM>::replaceGeometryPreciseExtent(size_t index, const GEOM& geom)
 	{
+		if (!_extent.crs().isConsistent(geom.crs())) {
+			throw CRSMismatchException("Geometry CRS does not match dataset CRS");
+        }
 		_geometries[index] = geom;
 		bool init = false;
 		for (const Feature<GEOM, AttributeTable*>& f : *this) {
@@ -611,7 +617,14 @@ namespace lapis {
 		_geometries.push_back(g);
 		_attributes.addRow();
 		if (nFeature() == 1) {
+			CoordRef crs = _extent.crs();
+			if (!crs.isConsistent(g.crs())) {
+                throw CRSMismatchException("Geometry CRS does not match dataset CRS");
+			}
 			_extent = g.boundingBox();
+			if (!crs.isEmpty()) {
+                _extent.defineCRS(crs);
+			}
 		}
 		else {
 			_extent = extendExtent(_extent, g.boundingBox());
