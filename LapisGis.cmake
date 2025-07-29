@@ -1,5 +1,20 @@
 include_guard(GLOBAL)
 
+set(PROJ_DB_PATH "" CACHE FILEPATH "Path to proj.db")
+if(NOT EXISTS "${PROJ_DB_PATH}")
+    message(FATAL_ERROR "proj.db not found at: ${PROJ_DB_PATH}\n"
+	"Please specify it using -DPROJ_DB_PATH")
+endif()
+
+function(copy_proj_db_after_build target)
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${PROJ_DB_PATH}"
+            "$<TARGET_FILE_DIR:${target}>/proj.db"
+        COMMENT "Copying proj.db to output directory for ${target}"
+    )
+endfunction()
+
 set(LAPISGIS_DIR ${CMAKE_CURRENT_LIST_DIR})
 
 file(GLOB LAPISGIS_SOURCES
