@@ -28,12 +28,20 @@ namespace lapis {
 		const CoordRef& crs() const;
 		void setCrs(const CoordRef& crs);
 
+		void projectInPlace(const CoordRef& newCrs);
+
+		//this overload exists mostly to be called by VectorDataset; it allows you to cache the OGRCoordinateTransform when performing
+        //the same projection multiple times
+		void projectInPlace(OGRCoordinateTransformation* oct, const CoordRef& cr);
+
 		virtual ~Geometry() = default;
 
 	protected:
 		CoordRef _crs;
 		Geometry() = default;
 		Geometry(const Geometry&) = default;
+
+		virtual void _projectGdalInternals(OGRCoordinateTransformation* newCrs) = 0;
 	};
 	class Point : public Geometry {
 	public:
@@ -58,6 +66,7 @@ namespace lapis {
 		Extent boundingBox() const override;
 	private:
 		OGRPoint _point;
+		void _projectGdalInternals(OGRCoordinateTransformation* newCrs) override;
 	};
 	class Polygon : public Geometry {
 	public:
@@ -91,6 +100,9 @@ namespace lapis {
 	private:
 		static std::vector<CoordXY> _coordsFromRing(const OGRLinearRing* ring);
 		OGRPolygon _polygon;
+		void _projectGdalInternals(OGRCoordinateTransformation* newCrs) override;
+
+		static coord_t _areaFromRing(const OGRLinearRing* ring);
 	};
 	class MultiPolygon : public Geometry {
 	private:
@@ -123,6 +135,7 @@ namespace lapis {
 		coord_t area() const;
 	private:
 		OGRMultiPolygon _multiPolygon;
+		void _projectGdalInternals(OGRCoordinateTransformation* newCrs) override;
 
 		class iterator {
 		public:

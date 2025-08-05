@@ -29,4 +29,54 @@ namespace lapis {
 
         EXPECT_TRUE(p.crs().isConsistent("2285"));
     }
+
+    TEST(VectorTest, PolygonArea) {
+        // Square: (0,0), (0,1), (1,1), (1,0)
+        std::vector<CoordXY> square = { {0,0}, {0,1}, {1,1}, {1,0} };
+        Polygon poly(square);
+        EXPECT_NEAR(poly.area(), 1.0, 0.01);
+
+        // Triangle: (0,0), (1,0), (0,1)
+        std::vector<CoordXY> triangle = { {0,0}, {1,0}, {0,1} };
+        Polygon tri(triangle);
+        EXPECT_NEAR(tri.area(), 0.5, 0.01);
+
+        // Rectangle: (0,0), (0,2), (3,2), (3,0)
+        std::vector<CoordXY> rect = { {0,0}, {0,2}, {3,2}, {3,0} };
+        Polygon rectangle(rect);
+        EXPECT_NEAR(rectangle.area(), 6.0, 0.01);
+
+        // Polygon with a hole (outer: square, inner: smaller square)
+        std::vector<CoordXY> outer = { {0,0}, {0,4}, {4,4}, {4,0} };
+        std::vector<CoordXY> inner = { {1,1}, {1,2}, {2,2}, {2,1} };
+        Polygon polyWithHole(outer);
+        polyWithHole.addInnerRing(inner);
+        EXPECT_NEAR(polyWithHole.area(), 16.0 - 1.0, 0.01);
+    }
+
+    TEST(VectorTest, MultiPolygonArea) {
+        // Two non-overlapping squares
+        std::vector<CoordXY> square1 = { {0,0}, {0,1}, {1,1}, {1,0} };
+        std::vector<CoordXY> square2 = { {2,2}, {2,3}, {3,3}, {3,2} };
+        Polygon poly1(square1);
+        Polygon poly2(square2);
+
+        MultiPolygon mp;
+        mp.addPolygon(poly1);
+        mp.addPolygon(poly2);
+
+        EXPECT_NEAR(mp.area(), 2.0,0.01);
+
+        // MultiPolygon with a polygon with a hole
+        std::vector<CoordXY> outer = { {0,0}, {0,4}, {4,4}, {4,0} };
+        std::vector<CoordXY> inner = { {1,1}, {1,2}, {2,2}, {2,1} };
+        Polygon polyWithHole(outer);
+        polyWithHole.addInnerRing(inner);
+
+        MultiPolygon mp2;
+        mp2.addPolygon(polyWithHole);
+        mp2.addPolygon(poly1);
+
+        EXPECT_NEAR(mp2.area(), (16.0 - 1.0) + 1.0, 0.01);
+    }
 }

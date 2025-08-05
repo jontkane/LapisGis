@@ -54,7 +54,7 @@ namespace lapis {
 		size_t getStringFieldWidth(const std::string& name) const;
         void setStringFieldWidth(const std::string& name, size_t width);
 
-		const std::string& getStringField(size_t index, const std::string& name) const;
+		std::string getStringField(size_t index, const std::string& name) const;
 		int64_t getIntegerField(size_t index, const std::string& name) const;
         double getRealField(size_t index, const std::string& name) const;
 		template<class T>
@@ -96,7 +96,7 @@ namespace lapis {
 
 		class FixedWidthString {
 		public:
-			const std::string& get() const;
+			std::string get() const;
 			void set(const std::string& value, size_t width);
 		private:
 			std::string _data;
@@ -127,7 +127,7 @@ namespace lapis {
 		size_t getStringFieldWidth(const std::string& name) const;
 		bool fieldExists(const std::string& name) const;
 
-		const std::string& getStringField(const std::string& name) const;
+		std::string getStringField(const std::string& name) const;
 		int64_t getIntegerField(const std::string& name) const;
 		double getRealField(const std::string& name) const;
 		template<class T>
@@ -175,8 +175,8 @@ namespace lapis {
 		VectorDataset(const std::string& filename);
 		explicit VectorDataset(const std::filesystem::path& filename);
 
-		void writeShapefile(const std::filesystem::path& filename);
-		void writeShapefile(const std::string& filename);
+		void writeShapefile(const std::filesystem::path& filename) const;
+		void writeShapefile(const std::string& filename) const;
 
 		void addStringField(const std::string& name, size_t width);
 		void addIntegerField(const std::string& name);
@@ -200,7 +200,7 @@ namespace lapis {
 		size_t getStringFieldWidth(const std::string& name) const;
 		void setStringFieldWidth(const std::string& name, size_t width);
 
-		const std::string& getStringField(size_t index, const std::string& name) const;
+		std::string getStringField(size_t index, const std::string& name) const;
 		int64_t getIntegerField(size_t index, const std::string& name) const;
 		double getRealField(size_t index, const std::string& name) const;
 		template<class T>
@@ -211,6 +211,9 @@ namespace lapis {
 		void setRealField(size_t index, const std::string& name, double value);
 		template<class T>
 		void setNumericField(size_t index, const std::string& name, T value);
+
+        void projectInPlace(const CoordRef& newCrs);
+        void projectInPlacePreciseExtent(const CoordRef& newCrs);
 
 
 		template<class attribute_pointer>
@@ -246,6 +249,8 @@ namespace lapis {
 		std::vector<GEOM> _geometries;
 		Extent _extent;
 		AttributeTable _attributes;
+
+		void _projectInPlaceShared(const CoordRef& newCrs);
 	};
 
     template<class GEOM, class attribute_pointer>
@@ -265,7 +270,7 @@ namespace lapis {
 		size_t getStringFieldWidth(const std::string& name) const;
 		bool fieldExists(const std::string& name) const;
 
-		const std::string& getStringField(const std::string& name) const;
+		std::string getStringField(const std::string& name) const;
 		int64_t getIntegerField(const std::string& name) const;
 		double getRealField(const std::string& name) const;
 		template<class T>
@@ -393,7 +398,7 @@ namespace lapis {
 	}
 
     template<class attribute_pointer>
-	inline const std::string& AttributeRow<attribute_pointer>::getStringField(const std::string& name) const
+	inline std::string AttributeRow<attribute_pointer>::getStringField(const std::string& name) const
 	{
 		return _attributes->getStringField(_index, name);
 	}
@@ -494,7 +499,7 @@ namespace lapis {
     }
 
     template<class GEOM>
-	inline void VectorDataset<GEOM>::writeShapefile(const std::string& filename)
+	inline void VectorDataset<GEOM>::writeShapefile(const std::string& filename) const
 	{
 		gdalAllRegisterThreadSafe();
 		UniqueGdalDataset outshp = gdalCreateWrapperVector(filename.c_str());
@@ -544,7 +549,7 @@ namespace lapis {
 		}
 	}
     template<class GEOM>
-	inline void VectorDataset<GEOM>::writeShapefile(const std::filesystem::path& filename)
+	inline void VectorDataset<GEOM>::writeShapefile(const std::filesystem::path& filename) const
 	{
 		writeShapefile(filename.string());
 	}
@@ -657,7 +662,7 @@ namespace lapis {
 	}
 
     template<class GEOM>
-	inline const std::string& VectorDataset<GEOM>::getStringField(size_t index, const std::string& name) const
+	inline std::string VectorDataset<GEOM>::getStringField(size_t index, const std::string& name) const
 	{
 		return _attributes.getStringField(index, name);
 	}
@@ -698,6 +703,55 @@ namespace lapis {
 	inline void VectorDataset<GEOM>::setNumericField(size_t index, const std::string& name, T value)
 	{
         _attributes.setNumericField<T>(index, name, value);
+	}
+
+	template<class GEOM>
+	inline void VectorDataset<GEOM>::projectInPlace(const CoordRef& newCrs)
+	{
+		if (_extent.crs().isConsistent(newCrs)) {
+			return;
+		}
+		_projectInPlaceShared(newCrs);
+		
+		_extent = QuadExtent(_extent, newCrs).outerExtent();
+    }
+	template<class GEOM>
+	inline void VectorDataset<GEOM>::projectInPlacePreciseExtent(const CoordRef& newCrs)
+	{
+		if (_extent.crs().isConsistent(newCrs)) {
+			return;
+		}
+		_projectInPlaceShared(newCrs);
+
+		bool init = false;
+		Extent newExtent;
+		for (const GEOM& geometry : _geometries) {
+			if (!init) {
+				newExtent = geometry.boundingBox();
+				init = true;
+			}
+			else {
+				newExtent = extendExtent(newExtent, geometry.boundingBox());
+			}
+		}
+	}
+
+	template<class GEOM>
+	inline void VectorDataset<GEOM>::_projectInPlaceShared(const CoordRef& newCrs) {
+		if (_extent.crs().isConsistent(newCrs)) {
+			return;
+        }
+		OGRSpatialReference oldAsOSR;
+        oldAsOSR.importFromWkt(_extent.crs().getCompleteWKT().c_str());
+		OGRSpatialReference newAsOSR;
+        newAsOSR.importFromWkt(newCrs.getCompleteWKT().c_str());
+        OGRCoordinateTransformation* transform = OGRCreateCoordinateTransformation(&oldAsOSR, &newAsOSR);
+
+		for (GEOM& geometry : _geometries) {
+			geometry.projectInPlace(transform, newCrs);
+        }
+
+		OGRCoordinateTransformation::DestroyCT(transform);
 	}
 
     template<class GEOM>
@@ -815,7 +869,7 @@ namespace lapis {
 	}
 
     template<class GEOM, class attribute_pointer>
-	inline const std::string& Feature<GEOM, attribute_pointer>::getStringField(const std::string& name) const
+	inline std::string Feature<GEOM, attribute_pointer>::getStringField(const std::string& name) const
 	{
 		return _attributeRow.getStringField(name);
 	}

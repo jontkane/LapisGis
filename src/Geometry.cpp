@@ -46,6 +46,25 @@ namespace lapis {
     {
         _crs = crs;
     }
+    void Geometry::projectInPlace(OGRCoordinateTransformation* oct, const CoordRef& cr)
+    {
+        _projectGdalInternals(oct);
+        setCrs(cr);
+    }
+    void Geometry::projectInPlace(const CoordRef& newCrs)
+    {
+        OGRSpatialReference oldAsOSR;
+        oldAsOSR.importFromWkt(_crs.getCompleteWKT().c_str());
+
+        OGRSpatialReference newAsOSR;
+        newAsOSR.importFromWkt(newCrs.getCompleteWKT().c_str());
+
+        OGRCoordinateTransformation* oct = OGRCreateCoordinateTransformation(&oldAsOSR, &newAsOSR);
+
+        projectInPlace(oct, newCrs);
+
+        OGRCoordinateTransformation::DestroyCT(oct);
+    }
     Point::Point(const OGRGeometry& geom)
     {
         if (wkbFlatten(geom.getGeometryType()) != wkbPoint) {
@@ -104,6 +123,14 @@ namespace lapis {
     Extent Point::boundingBox() const
     {
         return Extent(x(), x(), y(), y(), _crs);
+    }
+
+    void Point::_projectGdalInternals(OGRCoordinateTransformation* transform)
+    {
+        OGRErr error = _point.transform(transform);
+        if (error != OGRERR_NONE) {
+            throw std::runtime_error("Failed to project point to new CRS");
+        }
     }
 
     static void addPointToRing(OGRLinearRing& ring, coord_t x, coord_t y) {
@@ -225,7 +252,11 @@ namespace lapis {
     }
     coord_t Polygon::area() const
     {
-        return _polygon.get_Area();
+        coord_t totalArea = _areaFromRing(_polygon.getExteriorRing());
+        for (int i = 0; i < _polygon.getNumInteriorRings(); i++) {
+            totalArea -= _areaFromRing(_polygon.getInteriorRing(i));
+        }
+        return totalArea;
     }
     std::vector<CoordXY> Polygon::_coordsFromRing(const OGRLinearRing* ring)
     {
@@ -236,6 +267,40 @@ namespace lapis {
             out.emplace_back(point.getX(), point.getY());
         }
         return out;
+    }
+
+    void Polygon::_projectGdalInternals(OGRCoordinateTransformation* transform)
+    {
+        OGRErr error = _polygon.transform(transform);
+        if (error != OGRERR_NONE) {
+            throw std::runtime_error("Failed to project polygon to new CRS");
+        }
+    }
+
+    coord_t Polygon::_areaFromRing(const OGRLinearRing* ring)
+    {
+        int nPoints = ring->getNumPoints();
+        if (nPoints < 4) { //3 for a triangle, plus the duplicated point
+            return 0; 
+        }
+        OGRPoint pointOne, pointTwo;
+        coord_t area = 0;
+        ring->getPoint(0, &pointOne);
+
+        //this is the shoelace formula
+        for (int i = 1; i < nPoints; ++i) {
+            ring->getPoint(i, &pointTwo);
+
+            coord_t x1 = pointOne.getX();
+            coord_t y1 = pointOne.getY();
+            coord_t x2 = pointTwo.getX();
+            coord_t y2 = pointTwo.getY();
+            area += (x1 * y2) - (x2 * y1);
+
+            std::swap(pointOne, pointTwo);
+        }
+
+        return std::abs(area) / 2.0;
     }
 
     MultiPolygon::MultiPolygon(const OGRGeometry& geom)
@@ -317,7 +382,19 @@ namespace lapis {
     }
     coord_t MultiPolygon::area() const
     {
-        return _multiPolygon.get_Area();
+        coord_t totalArea = 0;
+        for (Polygon poly : *this) {
+            totalArea += poly.area();
+        }
+        return totalArea;
+    }
+
+    void MultiPolygon::_projectGdalInternals(OGRCoordinateTransformation* transform)
+    {
+        OGRErr error = _multiPolygon.transform(transform);
+        if (error != OGRERR_NONE) {
+            throw std::runtime_error("Failed to project multipolygon to new CRS");
+        }
     }
 
     MultiPolygon::iterator::iterator(OGRMultiPolygon* multiPolygon, size_t index) : _multiPolygon(multiPolygon), _index(index) {}

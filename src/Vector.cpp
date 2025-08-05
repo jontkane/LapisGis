@@ -16,6 +16,7 @@ namespace lapis {
         bool initFields = false;
         resize(layer->GetFeatureCount());
 
+        size_t thisFeatureIndex = 0;
         for (const OGRFeatureUniquePtr& feature : layer) {
             if (!initFields) {
                 for (int i = 0; i < feature->GetFieldCount(); ++i) {
@@ -43,18 +44,19 @@ namespace lapis {
                 switch (field->GetType()) {
                 case OFTInteger:
                 case OFTInteger64:
-                    setIntegerField(i, field->GetNameRef(), feature->GetFieldAsInteger64(field->GetNameRef()));
+                    setIntegerField(thisFeatureIndex, field->GetNameRef(), feature->GetFieldAsInteger64(field->GetNameRef()));
                     break;
                 case OFTReal:
-                    setRealField(i, field->GetNameRef(), feature->GetFieldAsDouble(field->GetNameRef()));
+                    setRealField(thisFeatureIndex, field->GetNameRef(), feature->GetFieldAsDouble(field->GetNameRef()));
                     break;
                 case OFTString:
-                    setStringField(i, field->GetNameRef(), feature->GetFieldAsString(field->GetNameRef()));
+                    setStringField(thisFeatureIndex, field->GetNameRef(), feature->GetFieldAsString(field->GetNameRef()));
                     break;
                 default:
                     throw WrongFieldTypeException("Unimplemented field type when reading shapefile");
                 }
             }
+            thisFeatureIndex++;
         }
     }
     AttributeTable::AttributeTable(const std::filesystem::path& filename)
@@ -152,7 +154,7 @@ namespace lapis {
         }
     }
 
-    const std::string& AttributeTable::getStringField(size_t index, const std::string& name) const
+    std::string AttributeTable::getStringField(size_t index, const std::string& name) const
     {
         if (_fields.at(name).type != FieldType::String) {
             throw WrongFieldTypeException("Wrong field type; expected string");
@@ -254,9 +256,12 @@ namespace lapis {
             _data = value + std::string(width - value.size(), '\0');
         }
     }
-    const std::string& AttributeTable::FixedWidthString::get() const
+    std::string AttributeTable::FixedWidthString::get() const
     {
-        return _data;
+        //the internal string is often padded with \0, so we need to trim it
+        std::string trimmed = _data;
+        trimmed.erase(std::find(trimmed.begin(), trimmed.end(), '\0'), trimmed.end());
+        return trimmed;
     }
 
 }
