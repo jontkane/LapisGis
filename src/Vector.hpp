@@ -543,8 +543,8 @@ namespace lapis {
 					break;
 				}
 			}
-			const GEOM::GdalEquivalent& geometry = feature.getGeometry().gdalGeometry();
-			gdalFeature->SetGeometry(&geometry);
+			std::unique_ptr<GEOM::GdalEquivalent> geometry = feature.getGeometry().gdalGeometry();
+			gdalFeature->SetGeometry(geometry.get());
 			layer->CreateFeature(gdalFeature.get());
 		}
 	}
@@ -741,17 +741,11 @@ namespace lapis {
 		if (_extent.crs().isConsistent(newCrs)) {
 			return;
         }
-		OGRSpatialReference oldAsOSR;
-        oldAsOSR.importFromWkt(_extent.crs().getCompleteWKT().c_str());
-		OGRSpatialReference newAsOSR;
-        newAsOSR.importFromWkt(newCrs.getCompleteWKT().c_str());
-        OGRCoordinateTransformation* transform = OGRCreateCoordinateTransformation(&oldAsOSR, &newAsOSR);
+        CoordTransform transform(_extent.crs(), newCrs);
 
 		for (GEOM& geometry : _geometries) {
-			geometry.projectInPlace(transform, newCrs);
+			geometry.projectInPlace(transform);
         }
-
-		OGRCoordinateTransformation::DestroyCT(transform);
 	}
 
     template<class GEOM>

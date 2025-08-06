@@ -77,6 +77,8 @@ namespace lapis {
 		SharedPJ& getSharedPtr();
 		const SharedPJ& getSharedPtr() const;
 
+        std::unique_ptr<OGRSpatialReference> gdalSpatialRef() const;
+
 	private:
 		SharedPJ _p;
 		LinearUnit _zUnits;

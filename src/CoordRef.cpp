@@ -284,6 +284,13 @@ namespace lapis {
 		return _p;
 	}
 
+	std::unique_ptr<OGRSpatialReference> CoordRef::gdalSpatialRef() const
+	{
+        std::unique_ptr<OGRSpatialReference> osr{ new OGRSpatialReference() };
+        osr->importFromWkt(getCompleteWKT().c_str());
+		return osr;
+	}
+
 	void CoordRef::_crsFromString(const std::string& s) {
 		if (!s.size()) {
 			_p = SharedPJ();
