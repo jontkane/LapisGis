@@ -762,9 +762,9 @@ namespace lapis {
 			}
 			cellsOnEdge.insert(cellFromRowColUnsafe(row, col));
 			};
-		auto doOneLineSegment = [&](const OGRPoint& begin, const OGRPoint& end) {
-			coord_t x1 = begin.getX(), y1 = begin.getY();
-			coord_t x2 = end.getX(), y2 = end.getY();
+		auto doOneLineSegment = [&](const CoordXY& begin, const CoordXY& end) {
+			coord_t x1 = begin.x, y1 = begin.y;
+			coord_t x2 = end.x, y2 = end.y;
 
 			//first we check if the segment is outside the extent in such a way that it cannot pass through the extent in the middle
 			if (x1 < xmin() && x2 < xmin()) return;
@@ -940,34 +940,31 @@ namespace lapis {
 			}
 
 			};
-		auto doOneRing = [&](const OGRLinearRing* ring) {
-			for (int i = 0; i < ring->getNumPoints() - 1; ++i) {
-				OGRPoint begin, end;
-				ring->getPoint(i, &begin);
-				ring->getPoint(i + 1, &end);
+		auto doOneRing = [&](const std::vector<CoordXY>& ring) {
+			for (int i = 0; i < ring.size() - 1; ++i) {
+				CoordXY begin = ring[i];
+                CoordXY end = ring[i + 1];
 				doOneLineSegment(begin, end);
 			}
 			};
-		auto doOnePolygon = [&](const OGRPolygon& poly) {
-			doOneRing(poly.getExteriorRing());
-			for (int i = 0; i < poly.getNumInteriorRings(); ++i) {
-				doOneRing(poly.getInteriorRing(i));
+		auto doOnePolygon = [&](const Polygon& poly) {
+			doOneRing(poly.getOuterRing());
+			for (int i = 0; i < poly.nInnerRings(); ++i) {
+				doOneRing(poly.getInnerRingUnsafe(i));
 			}
 			};
 
 		if constexpr (std::is_same<GEOMETRY, Polygon>()) {
 			for (const auto& feature : vect) {
 				const GEOMETRY& geom = feature.getGeometry();
-				const OGRPolygon& asGdal = geom.gdalGeometry();
-				doOnePolygon(asGdal);
+				doOnePolygon(geom);
 			}
 		}
 		else if constexpr (std::is_same<GEOMETRY, MultiPolygon>()) {
 			for (const auto& feature : vect) {
                 const GEOMETRY& geom = feature.getGeometry();
-				for (Polygon poly : geom) {
-					const OGRPolygon& asGdal = poly.gdalGeometry();
-                    doOnePolygon(asGdal);
+				for (const Polygon& poly : geom) {
+                    doOnePolygon(poly);
 				}
 			}
 		}

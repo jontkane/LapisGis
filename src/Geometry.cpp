@@ -1,38 +1,9 @@
 #include"Geometry.hpp"
+#include"GisExceptions.hpp"
 
 namespace lapis {
 
     WrongGeometryTypeException::WrongGeometryTypeException(const std::string& error) : std::runtime_error(error) {}
-
-    static bool pointInGdalRing(const OGRLinearRing* ring, coord_t x, coord_t y) {
-
-        //hoping that this algorithm is faster than gdal's, which is very very slow
-        int nvert = ring->getNumPoints() - 1; //gdal stores the first point twice; but this algorithm cares about the true number of vertices
-        OGRPoint iPoint;
-        OGRPoint jPoint;
-        bool within = false;
-        for (int i = 0, j = nvert - 1; i < nvert; j = i++) {
-            ring->getPoint(i, &iPoint);
-            ring->getPoint(j, &jPoint);
-            coord_t ix = iPoint.getX();
-            coord_t iy = iPoint.getY();
-            coord_t jx = jPoint.getX();
-            coord_t jy = jPoint.getY();
-            if (((iy > y) != (jy > y)) &&
-                (x < (jx - ix) * (y - iy) / (jy - iy) + ix)) {
-                within = !within;
-            }
-        }
-        return within;
-    }
-    static bool pointInGdalPolygon(const OGRPolygon* poly, coord_t x, coord_t y) {
-        for (int i = 0; i < poly->getNumInteriorRings(); i++) {
-            if (pointInGdalRing(poly->getInteriorRing(i), x, y)) {
-                return false;
-            }
-        }
-        return pointInGdalRing(poly->getExteriorRing(), x, y);
-    }
 
     OGRwkbGeometryType Geometry::gdalGeometryType() const
     {
@@ -46,78 +17,62 @@ namespace lapis {
     {
         _crs = crs;
     }
-    void Geometry::projectInPlace(OGRCoordinateTransformation* oct, const CoordRef& cr)
-    {
-        _projectGdalInternals(oct);
-        setCrs(cr);
-    }
+
     void Geometry::projectInPlace(const CoordRef& newCrs)
     {
-        OGRSpatialReference oldAsOSR;
-        oldAsOSR.importFromWkt(_crs.getCompleteWKT().c_str());
-
-        OGRSpatialReference newAsOSR;
-        newAsOSR.importFromWkt(newCrs.getCompleteWKT().c_str());
-
-        OGRCoordinateTransformation* oct = OGRCreateCoordinateTransformation(&oldAsOSR, &newAsOSR);
-
-        projectInPlace(oct, newCrs);
-
-        OGRCoordinateTransformation::DestroyCT(oct);
+        CoordTransform transform(_crs, newCrs);
+        projectInPlace(transform);
     }
     Point::Point(const OGRGeometry& geom)
     {
-        if (wkbFlatten(geom.getGeometryType()) != wkbPoint) {
-            throw WrongGeometryTypeException("Wrong geometry; expected Point");
-        }
-        _point = *geom.toPoint();
-        setCrs(CoordRef(_point.getSpatialReference()));
+        _sharedConstructorFromGdal(geom);
+        setCrs(CoordRef(geom.getSpatialReference()));
     }
     Point::Point(const OGRGeometry& geom, const CoordRef& crs)
     {
-        if (wkbFlatten(geom.getGeometryType()) != wkbPoint) {
-            throw WrongGeometryTypeException("Wrong geometry; expected Point");
-        }
-        _point = *geom.toPoint();
+        _sharedConstructorFromGdal(geom);
         setCrs(crs);
     }
     Point::Point(coord_t x, coord_t y)
+        : _point(x, y)
     {
-        _point = OGRPoint(x, y);
     }
     Point::Point(coord_t x, coord_t y, const CoordRef& crs)
+        : _point(x,y)
     {
-        _point = OGRPoint(x, y);
         _crs = crs;
     }
     Point::Point(CoordXY xy)
+        : _point(xy)
     {
-        _point = OGRPoint(xy.x, xy.y);
     }
     Point::Point(CoordXY xy, const CoordRef& crs)
+        : _point(xy)
     {
-        _point = OGRPoint(xy.x, xy.y);
         _crs = crs;
     }
     OGRwkbGeometryType Point::gdalGeometryType() const
     {
         return OGRwkbGeometryType::wkbPoint;
     }
-    const OGRPoint& Point::gdalGeometry() const
+    std::unique_ptr<OGRPoint> Point::gdalGeometry() const
     {
-        return _point;
+        std::unique_ptr<OGRPoint> gdalPoint = std::make_unique<OGRPoint>(_point.x, _point.y);
+        gdalPoint->assignSpatialReference(_crs.gdalSpatialRef().get());
+        return gdalPoint;
     }
-    const OGRGeometry& Point::gdalGeometryGeneric() const
+    std::unique_ptr<OGRGeometry> Point::gdalGeometryGeneric() const
     {
-        return _point;
+        std::unique_ptr<OGRPoint> gdalPoint = gdalGeometry();
+        return std::unique_ptr<OGRGeometry>(dynamic_cast<OGRGeometry*>(gdalPoint.release()));
     }
     coord_t Point::x() const
     {
-        return _point.getX();
+        return _point.x;
     }
     coord_t Point::y() const
     {
-        return _point.getY();
+        return _point.y;
     }
 
     Extent Point::boundingBox() const
@@ -125,122 +80,159 @@ namespace lapis {
         return Extent(x(), x(), y(), y(), _crs);
     }
 
-    void Point::_projectGdalInternals(OGRCoordinateTransformation* transform)
+    void Point::projectInPlace(const CoordTransform& transform)
     {
-        OGRErr error = _point.transform(transform);
-        if (error != OGRERR_NONE) {
-            throw std::runtime_error("Failed to project point to new CRS");
-        }
+        _point = transform.transformSingleXY(_point.x, _point.y);
+        _crs = transform.dst();
     }
 
-    static void addPointToRing(OGRLinearRing& ring, coord_t x, coord_t y) {
-        OGRPoint point;
-        point.setX(x);
-        point.setY(y);
-        ring.addPoint(&point);
+    void Point::_sharedConstructorFromGdal(const OGRGeometry& geom)
+    {
+        if (wkbFlatten(geom.getGeometryType()) != wkbPoint) {
+            throw WrongGeometryTypeException("Wrong geometry; expected Point");
+        }
+        const OGRPoint* gdalPoint = geom.toPoint();
+        _point = CoordXY{ gdalPoint->getX(), gdalPoint->getY() };
     }
+
+
     Polygon::Polygon(const OGRGeometry& geom)
     {
-        if (wkbFlatten(geom.getGeometryType()) != wkbPolygon) {
-            throw WrongGeometryTypeException("Wrong geometry; expected Polygon");
-        }
-        _polygon = *geom.toPolygon();
-        setCrs(CoordRef(_polygon.getSpatialReference()));
+        _sharedConstructorFromGdal(geom);
+        setCrs(CoordRef(geom.getSpatialReference()));
     }
     Polygon::Polygon(const OGRGeometry& geom, const CoordRef& crs)
     {
-        if (wkbFlatten(geom.getGeometryType()) != wkbPolygon) {
-            throw WrongGeometryTypeException("Wrong geometry; expected Polygon");
-        }
-        _polygon = *geom.toPolygon();
+        _sharedConstructorFromGdal(geom);
         setCrs(crs);
     }
     Polygon::Polygon(const std::vector<CoordXY>& outerRing)
     {
-        OGRLinearRing gdalRing;
-        for (const CoordXY& xy : outerRing) {
-            addPointToRing(gdalRing, xy.x, xy.y);
+        _outerRing = outerRing;
+        if (_outerRing.back() != _outerRing.front()) {
+            _outerRing.push_back(_outerRing.front());
         }
-        gdalRing.closeRings();
-        _polygon.addRing(&gdalRing);
+        if (_outerRing.size() < 4) {
+            throw std::runtime_error("Rings must have at least 3 points");
+        }
     }
     Polygon::Polygon(const std::vector<CoordXY>& outerRing, const CoordRef& crs)
+        : Polygon(outerRing)
     {
-        OGRLinearRing gdalRing;
-        for (const CoordXY& xy : outerRing) {
-            addPointToRing(gdalRing, xy.x, xy.y);
-        }
-        gdalRing.closeRings();
-        _polygon.addRing(&gdalRing);
-        _crs = crs;
+        setCrs(crs);
     }
     Polygon::Polygon(const Extent& e)
     {
-        _crs = e.crs();
-        OGRLinearRing gdalRing;
-        addPointToRing(gdalRing, e.xmin(), e.ymax());
-        addPointToRing(gdalRing, e.xmin(), e.ymin());
-        addPointToRing(gdalRing, e.xmax(), e.ymin());
-        addPointToRing(gdalRing, e.xmax(), e.ymax());
-        gdalRing.closeRings();
-        _polygon.addRing(&gdalRing);
+        setCrs(e.crs());
+
+        _outerRing.reserve(5);
+        _outerRing.emplace_back(e.xmin(), e.ymax());
+        _outerRing.emplace_back(e.xmin(), e.ymin());
+        _outerRing.emplace_back(e.xmax(), e.ymin());
+        _outerRing.emplace_back(e.xmax(), e.ymax());
+        _outerRing.push_back(_outerRing.front());
     }
     Polygon::Polygon(const QuadExtent& q)
     {
-        _crs = q.crs();
+        setCrs(q.crs());
         const CoordXYVector& coords = q.coords();
-        OGRLinearRing gdalRing;
-        for (size_t i = 0; i < coords.size(); ++i) {
-            addPointToRing(gdalRing, coords[i].x, coords[i].y);
+        _outerRing.reserve(coords.size() + 1);
+        for (const CoordXY& xy : coords) {
+            _outerRing.push_back(xy);
         }
-        gdalRing.closeRings();
-        _polygon.addRing(&gdalRing);
+        _outerRing.push_back(_outerRing.front());
     }
     OGRwkbGeometryType Polygon::gdalGeometryType() const
     {
         return OGRwkbGeometryType::wkbPolygon;
     }
-    const OGRPolygon& Polygon::gdalGeometry() const
+    std::unique_ptr<OGRPolygon> Polygon::gdalGeometry() const
     {
-        return _polygon;
+        std::unique_ptr<OGRPolygon> gdalPolygon = std::make_unique<OGRPolygon>();
+        OGRLinearRing gdalOuterRing;
+        gdalOuterRing.setNumPoints((int)_outerRing.size());
+        for (const CoordXY& xy : _outerRing) {
+            gdalOuterRing.addPoint(xy.x, xy.y);
+        }
+        gdalOuterRing.closeRings(); //shouldn't be necessary but just in case
+        gdalPolygon->addRing(&gdalOuterRing);
+
+        for (const std::vector<CoordXY>& innerRing : _innerRings) {
+            OGRLinearRing gdalInnerRing;
+            gdalInnerRing.setNumPoints((int)innerRing.size());
+            for (const CoordXY& xy : innerRing) {
+                gdalInnerRing.addPoint(xy.x, xy.y);
+            }
+            gdalInnerRing.closeRings();
+            gdalPolygon->addRing(&gdalInnerRing);
+        }
+        gdalPolygon->assignSpatialReference(_crs.gdalSpatialRef().get());
+        return gdalPolygon;
     }
-    const OGRGeometry& Polygon::gdalGeometryGeneric() const
+    std::unique_ptr<OGRGeometry> Polygon::gdalGeometryGeneric() const
     {
-        return _polygon;
+        return std::unique_ptr<OGRGeometry>(dynamic_cast<OGRGeometry*>(gdalGeometry().release()));
     }
     void Polygon::addInnerRing(const std::vector<CoordXY>& innerRing)
     {
-        OGRLinearRing gdalRing;
-        for (const CoordXY& xy : innerRing) {
-            addPointToRing(gdalRing, xy.x, xy.y);
-        }
-        gdalRing.closeRings();
-        _polygon.addRing(&gdalRing);
+        _innerRings.push_back(innerRing);
     }
-    std::vector<CoordXY> Polygon::getOuterRing() const {
-        return _coordsFromRing(_polygon.getExteriorRing());
+    const std::vector<CoordXY>& Polygon::getOuterRing() const {
+        return _outerRing;
     }
     int Polygon::nInnerRings() const
     {
-        return _polygon.getNumInteriorRings();
+        return (int)_innerRings.size();
     }
-    std::vector<CoordXY> Polygon::getInnerRing(int index) const
+    const std::vector<CoordXY>& Polygon::getInnerRing(int index) const
     {
-        return _coordsFromRing(_polygon.getInteriorRing(index));
+        return _innerRings.at(index);
+    }
+    const std::vector<CoordXY>& Polygon::getInnerRingUnsafe(int index) const
+    {
+        return _innerRings[index];
     }
     Extent Polygon::boundingBox() const
     {
-        OGREnvelope g;
-        _polygon.getEnvelope(&g);
-        return Extent{ g.MinX,g.MaxX,g.MinY,g.MaxY,_crs };
+        coord_t xmin = std::numeric_limits<coord_t>::max();
+        coord_t xmax = std::numeric_limits<coord_t>::lowest();
+        coord_t ymin = std::numeric_limits<coord_t>::max();
+        coord_t ymax = std::numeric_limits<coord_t>::lowest();
+        for (const CoordXY& xy : _outerRing) {
+            if (xy.x < xmin) xmin = xy.x;
+            if (xy.x > xmax) xmax = xy.x;
+            if (xy.y < ymin) ymin = xy.y;
+            if (xy.y > ymax) ymax = xy.y;
+        }
+        return Extent{ xmin, xmax, ymin, ymax, _crs };
     }
     bool Polygon::containsPoint(coord_t x, coord_t y) const
     {
-        /*OGRPoint p;
-        p.setX(x);
-        p.setY(y);
-        return p.Within(&_polygon);*/
-        return pointInGdalPolygon(&_polygon, x, y);
+        auto pointInRing = [](const std::vector<CoordXY>& ring, coord_t x, coord_t y) {
+            int nvert = (int)(ring.size() - 1);
+            bool within = false;
+            for (int i = 0, j = nvert - 1; i < nvert; j = i++) {
+                coord_t ix = ring[i].x;
+                coord_t iy = ring[i].y;
+                coord_t jx = ring[j].x;
+                coord_t jy = ring[j].y;
+                if (((iy > y) != (jy > y)) &&
+                    (x < (jx - ix) * (y - iy) / (jy - iy) + ix)) {
+                    within = !within;
+                }
+            }
+            return within;
+            };
+
+        if (!pointInRing(_outerRing, x, y)) {
+            return false;
+        }
+        for (const std::vector<CoordXY>& innerRing : _innerRings) {
+            if (pointInRing(innerRing, x, y)) {
+                return false;
+            }
+        }
+        return true;
     }
     bool Polygon::containsPoint(CoordXY xy) const
     {
@@ -252,49 +244,59 @@ namespace lapis {
     }
     coord_t Polygon::area() const
     {
-        coord_t totalArea = _areaFromRing(_polygon.getExteriorRing());
-        for (int i = 0; i < _polygon.getNumInteriorRings(); i++) {
-            totalArea -= _areaFromRing(_polygon.getInteriorRing(i));
+        coord_t totalArea = _areaFromRing(_outerRing);
+        for (const std::vector<CoordXY>& innerRing : _innerRings) {
+            totalArea -= _areaFromRing(innerRing);
         }
         return totalArea;
     }
-    std::vector<CoordXY> Polygon::_coordsFromRing(const OGRLinearRing* ring)
-    {
-        std::vector<CoordXY> out;
-        int nCoords = ring->getNumPoints();
-        out.reserve(nCoords);
-        for (OGRPoint point : ring) {
-            out.emplace_back(point.getX(), point.getY());
+    void Polygon::_sharedConstructorFromGdal(const OGRGeometry& geom) {
+        if (wkbFlatten(geom.getGeometryType()) != wkbPolygon) {
+            throw WrongGeometryTypeException("Wrong geometry; expected Polygon");
         }
-        return out;
+        const OGRPolygon* gdalPolygon = geom.toPolygon();
+
+        const OGRLinearRing* exteriorRing = gdalPolygon->getExteriorRing();
+        for (const OGRPoint& point : *exteriorRing) {
+            _outerRing.emplace_back(point.getX(), point.getY());
+        }
+        for (int i = 0; i < gdalPolygon->getNumInteriorRings(); i++) {
+            const OGRLinearRing* innerRing = gdalPolygon->getInteriorRing(i);
+            std::vector<CoordXY> innerCoords;
+            for (const OGRPoint& point : *innerRing) {
+                innerCoords.emplace_back(point.getX(), point.getY());
+            }
+            _innerRings.emplace_back(std::move(innerCoords));
+        }
     }
 
-    void Polygon::_projectGdalInternals(OGRCoordinateTransformation* transform)
+    void Polygon::projectInPlace(const CoordTransform& transform)
     {
-        OGRErr error = _polygon.transform(transform);
-        if (error != OGRERR_NONE) {
-            throw std::runtime_error("Failed to project polygon to new CRS");
+        transform.transformXY(_outerRing);
+        for (std::vector<CoordXY>& innerRing : _innerRings) {
+            transform.transformXY(innerRing);
         }
+        setCrs(transform.dst());
     }
 
-    coord_t Polygon::_areaFromRing(const OGRLinearRing* ring)
+    coord_t Polygon::_areaFromRing(const std::vector<CoordXY>& ring)
     {
-        int nPoints = ring->getNumPoints();
+        int nPoints = (int)ring.size();
         if (nPoints < 4) { //3 for a triangle, plus the duplicated point
             return 0; 
         }
-        OGRPoint pointOne, pointTwo;
+        CoordXY pointOne, pointTwo;
         coord_t area = 0;
-        ring->getPoint(0, &pointOne);
+        pointOne = ring[0];
 
         //this is the shoelace formula
         for (int i = 1; i < nPoints; ++i) {
-            ring->getPoint(i, &pointTwo);
+            pointTwo = ring[i];
 
-            coord_t x1 = pointOne.getX();
-            coord_t y1 = pointOne.getY();
-            coord_t x2 = pointTwo.getX();
-            coord_t y2 = pointTwo.getY();
+            coord_t x1 = pointOne.x;
+            coord_t y1 = pointOne.y;
+            coord_t x2 = pointTwo.x;
+            coord_t y2 = pointTwo.y;
             area += (x1 * y2) - (x2 * y1);
 
             std::swap(pointOne, pointTwo);
@@ -305,68 +307,68 @@ namespace lapis {
 
     MultiPolygon::MultiPolygon(const OGRGeometry& geom)
     {
-        if (wkbFlatten(geom.getGeometryType()) != wkbMultiPolygon
-            && wkbFlatten(geom.getGeometryType()) != wkbPolygon) {
-            throw WrongGeometryTypeException("Wrong geometry; expected MultiPolygon");
-        }
-        _multiPolygon = *geom.toMultiPolygon();
-        setCrs(CoordRef(_multiPolygon.getSpatialReference()));
+        CoordRef crs{ geom.getSpatialReference() };
+        _sharedConstructorFromGdal(geom, crs);
+        setCrs(crs);
     }
     MultiPolygon::MultiPolygon(const OGRGeometry& geom, const CoordRef& crs)
     {
-        if (wkbFlatten(geom.getGeometryType()) != wkbMultiPolygon
-            && wkbFlatten(geom.getGeometryType()) != wkbPolygon) {
-            throw WrongGeometryTypeException("Wrong geometry; expected MultiPolygon");
-        }
-        _multiPolygon = *geom.toMultiPolygon();
+        _sharedConstructorFromGdal(geom, crs);
         setCrs(crs);
     }
     OGRwkbGeometryType MultiPolygon::gdalGeometryType() const
     {
         return OGRwkbGeometryType::wkbMultiPolygon;
     }
-    const OGRMultiPolygon& MultiPolygon::gdalGeometry() const
+    std::unique_ptr<OGRMultiPolygon> MultiPolygon::gdalGeometry() const
     {
-        return _multiPolygon;
+        std::unique_ptr<OGRMultiPolygon> gdalMultiPolygon = std::make_unique<OGRMultiPolygon>();
+        for (const Polygon& poly : _polygons) {
+            gdalMultiPolygon->addGeometry(poly.gdalGeometry().get());
+        }
+        gdalMultiPolygon->assignSpatialReference(_crs.gdalSpatialRef().get());
+        return gdalMultiPolygon;
     }
-    const OGRGeometry& MultiPolygon::gdalGeometryGeneric() const
+    std::unique_ptr<OGRGeometry> MultiPolygon::gdalGeometryGeneric() const
     {
-        return _multiPolygon;
+        return std::unique_ptr<OGRGeometry>(dynamic_cast<OGRGeometry*>(gdalGeometry().release()));
     }
     void MultiPolygon::addPolygon(const Polygon& polygon)
     {
-        _multiPolygon.addGeometry(&polygon.gdalGeometry());
+        if (!polygon.crs().isConsistent(_crs)) {
+            throw CRSMismatchException("Polygon CRS does not match MultiPolygon CRS");
+        }
+        _polygons.push_back(polygon);
     }
-    MultiPolygon::iterator MultiPolygon::begin() {
-        return iterator(&_multiPolygon, 0);
+    std::vector<Polygon>::iterator MultiPolygon::begin() {
+        return _polygons.begin();
     }
-    MultiPolygon::iterator MultiPolygon::end() {
-        return iterator(&_multiPolygon, _multiPolygon.getNumGeometries());
+    std::vector<Polygon>::iterator MultiPolygon::end() {
+        return _polygons.end();
     }
-    MultiPolygon::const_iterator MultiPolygon::begin() const
+    std::vector<Polygon>::const_iterator MultiPolygon::begin() const
     {
-        return const_iterator(&_multiPolygon, 0);
+        return _polygons.begin();
     }
-    MultiPolygon::const_iterator MultiPolygon::end() const
+    std::vector<Polygon>::const_iterator MultiPolygon::end() const
     {
-        return const_iterator(&_multiPolygon, _multiPolygon.getNumGeometries());
+        return _polygons.end();
     }
     Extent MultiPolygon::boundingBox() const
     {
-        OGREnvelope g;
-        _multiPolygon.getEnvelope(&g);
-        return Extent{ g.MinX,g.MaxX,g.MinY,g.MaxY,_crs };
+        if (!_polygons.size()) {
+            return Extent{ 0, 0, 0, 0, _crs };
+        }
+        Extent out = _polygons[0].boundingBox();
+        for (size_t i = 1; i < _polygons.size(); i++) {
+            out = extendExtent(out, _polygons[i].boundingBox());
+        }
+        return out;
     }
     bool MultiPolygon::containsPoint(coord_t x, coord_t y) const
     {
-        /*OGRPoint p;
-        p.setX(x);
-        p.setY(y);
-        return p.Within(&_multiPolygon);*/
-        int nPoly = _multiPolygon.getNumGeometries();
-        for (int i = 0; i < _multiPolygon.getNumGeometries(); i++) {
-            const OGRPolygon* poly = _multiPolygon.getGeometryRef(i);
-            if (pointInGdalPolygon(poly, x, y)) {
+        for (const Polygon& poly : _polygons) {
+            if (poly.containsPoint(x, y)) {
                 return true;
             }
         }
@@ -388,37 +390,26 @@ namespace lapis {
         }
         return totalArea;
     }
-
-    void MultiPolygon::_projectGdalInternals(OGRCoordinateTransformation* transform)
+    void MultiPolygon::projectInPlace(const CoordTransform& transform)
     {
-        OGRErr error = _multiPolygon.transform(transform);
-        if (error != OGRERR_NONE) {
-            throw std::runtime_error("Failed to project multipolygon to new CRS");
+        for (Polygon& poly : _polygons) {
+            poly.projectInPlace(transform);
         }
+        setCrs(transform.dst());
     }
-
-    MultiPolygon::iterator::iterator(OGRMultiPolygon* multiPolygon, size_t index) : _multiPolygon(multiPolygon), _index(index) {}
-    MultiPolygon::iterator& MultiPolygon::iterator::operator++() {
-        _index++;
-        return *this;
-    }
-    Polygon MultiPolygon::iterator::operator*() {
-        OGRPolygon* poly = _multiPolygon->getGeometryRef((int)_index)->toPolygon();
-        Polygon out{ *poly };
-        return Polygon(*poly);
-    }
-
-    MultiPolygon::const_iterator::const_iterator(const OGRMultiPolygon* multiPolygon, size_t index)
-        : _multiPolygon(multiPolygon), _index(index)
+    void MultiPolygon::_sharedConstructorFromGdal(const OGRGeometry& geom, const CoordRef& crs)
     {
-    }
-    MultiPolygon::const_iterator& MultiPolygon::const_iterator::operator++() {
-        _index++;
-        return *this;
-    }
-    const Polygon MultiPolygon::const_iterator::operator*() {
-        const OGRPolygon* poly = _multiPolygon->getGeometryRef((int)_index)->toPolygon();
-        Polygon out{ *poly };
-        return Polygon(*poly);
+        if (wkbFlatten(geom.getGeometryType()) != wkbMultiPolygon
+            && wkbFlatten(geom.getGeometryType()) != wkbPolygon) {
+            throw WrongGeometryTypeException("Wrong geometry; expected MultiPolygon");
+        }
+        if (wkbFlatten(geom.getGeometryType()) == wkbPolygon) {
+            _polygons.emplace_back(geom, crs);
+            return;
+        }
+        const OGRMultiPolygon* gdalMultiPolygon = geom.toMultiPolygon();
+        for (int i = 0; i < gdalMultiPolygon->getNumGeometries(); i++) {
+            _polygons.emplace_back(*gdalMultiPolygon->getGeometryRef(i), crs);
+        }
     }
 }

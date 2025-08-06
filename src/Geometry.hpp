@@ -21,7 +21,7 @@ namespace lapis {
 
 		virtual OGRwkbGeometryType gdalGeometryType() const;
 
-		virtual const OGRGeometry& gdalGeometryGeneric() const = 0;
+		virtual std::unique_ptr<OGRGeometry> gdalGeometryGeneric() const = 0;
 
 		virtual Extent boundingBox() const = 0;
 
@@ -29,10 +29,7 @@ namespace lapis {
 		void setCrs(const CoordRef& crs);
 
 		void projectInPlace(const CoordRef& newCrs);
-
-		//this overload exists mostly to be called by VectorDataset; it allows you to cache the OGRCoordinateTransform when performing
-        //the same projection multiple times
-		void projectInPlace(OGRCoordinateTransformation* oct, const CoordRef& cr);
+		virtual void projectInPlace(const CoordTransform& transform) = 0;
 
 		virtual ~Geometry() = default;
 
@@ -40,8 +37,6 @@ namespace lapis {
 		CoordRef _crs;
 		Geometry() = default;
 		Geometry(const Geometry&) = default;
-
-		virtual void _projectGdalInternals(OGRCoordinateTransformation* newCrs) = 0;
 	};
 	class Point : public Geometry {
 	public:
@@ -57,16 +52,18 @@ namespace lapis {
 		Point(CoordXY xy, const CoordRef& crs);
 
 		OGRwkbGeometryType gdalGeometryType() const override;
-		const OGRPoint& gdalGeometry() const;
-		const OGRGeometry& gdalGeometryGeneric() const override;
+		std::unique_ptr<OGRPoint> gdalGeometry() const;
+		std::unique_ptr<OGRGeometry> gdalGeometryGeneric() const override;
 
 		coord_t x() const;
 		coord_t y() const;
 
 		Extent boundingBox() const override;
+
+        void projectInPlace(const CoordTransform& transform) override;
 	private:
-		OGRPoint _point;
-		void _projectGdalInternals(OGRCoordinateTransformation* newCrs) override;
+		CoordXY _point;
+		void _sharedConstructorFromGdal(const OGRGeometry& geom);
 	};
 	class Polygon : public Geometry {
 	public:
@@ -82,14 +79,16 @@ namespace lapis {
 		Polygon(const QuadExtent& q);
 
 		OGRwkbGeometryType gdalGeometryType() const override;
-		const OGRPolygon& gdalGeometry() const;
-		const OGRGeometry& gdalGeometryGeneric() const override;
+		std::unique_ptr<OGRPolygon> gdalGeometry() const;
+		std::unique_ptr<OGRGeometry> gdalGeometryGeneric() const override;
 
 		void addInnerRing(const std::vector<CoordXY>& innerRing);
 
-		std::vector<CoordXY> getOuterRing() const;
+		const std::vector<CoordXY>& getOuterRing() const;
 		int nInnerRings() const;
-		std::vector<CoordXY> getInnerRing(int index) const;
+		const std::vector<CoordXY>& getInnerRing(int index) const;
+		const std::vector<CoordXY>& getInnerRingUnsafe(int index) const;
+		
 
 		Extent boundingBox() const override;
 		bool containsPoint(coord_t x, coord_t y) const;
@@ -97,12 +96,14 @@ namespace lapis {
 		bool containsPoint(Point p) const;
 
 		coord_t area() const;
-	private:
-		static std::vector<CoordXY> _coordsFromRing(const OGRLinearRing* ring);
-		OGRPolygon _polygon;
-		void _projectGdalInternals(OGRCoordinateTransformation* newCrs) override;
 
-		static coord_t _areaFromRing(const OGRLinearRing* ring);
+        void projectInPlace(const CoordTransform& transform) override;
+	private:
+		std::vector<CoordXY> _outerRing;
+        std::vector<std::vector<CoordXY>> _innerRings;
+
+		static coord_t _areaFromRing(const std::vector<CoordXY>& ring);
+		void _sharedConstructorFromGdal(const OGRGeometry& geom);
 	};
 	class MultiPolygon : public Geometry {
 	private:
@@ -117,13 +118,13 @@ namespace lapis {
 		MultiPolygon(const OGRGeometry& geom, const CoordRef& crs);
 
 		OGRwkbGeometryType gdalGeometryType() const override;
-		const OGRMultiPolygon& gdalGeometry() const;
-		const OGRGeometry& gdalGeometryGeneric() const override;
+		std::unique_ptr<OGRMultiPolygon> gdalGeometry() const;
+		std::unique_ptr<OGRGeometry> gdalGeometryGeneric() const override;
 
-		iterator begin();
-		iterator end();
-		const_iterator begin() const;
-		const_iterator end() const;
+		std::vector<Polygon>::iterator begin();
+		std::vector<Polygon>::iterator end();
+		std::vector<Polygon>::const_iterator begin() const;
+		std::vector<Polygon>::const_iterator end() const;
 
 		void addPolygon(const Polygon& polygon);
 
@@ -133,30 +134,11 @@ namespace lapis {
 		bool containsPoint(Point p) const;
 
 		coord_t area() const;
-	private:
-		OGRMultiPolygon _multiPolygon;
-		void _projectGdalInternals(OGRCoordinateTransformation* newCrs) override;
 
-		class iterator {
-		public:
-			iterator(OGRMultiPolygon* multiPolygon, size_t index);
-			iterator& operator++();
-			bool operator==(const iterator& other) const = default;
-			Polygon operator*();
-		private:
-			OGRMultiPolygon* _multiPolygon;
-			size_t _index;
-		};
-		class const_iterator {
-		public:
-			const_iterator(const OGRMultiPolygon* multiPolygon, size_t index);
-			const_iterator& operator++();
-			bool operator==(const const_iterator& other) const = default;
-			const Polygon operator*();
-		private:
-			const OGRMultiPolygon* _multiPolygon;
-			size_t _index;
-		};
+        void projectInPlace(const CoordTransform& transform) override;
+	private:
+        std::vector<Polygon> _polygons;
+		void _sharedConstructorFromGdal(const OGRGeometry& geom, const CoordRef& crs);
 	};
 }
 
