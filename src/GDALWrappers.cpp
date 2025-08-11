@@ -68,6 +68,19 @@ namespace lapis {
 			}
 		);
 	}
+	SharedOGRSpatialRef ogrSpatialRefFromWkt(const std::string& wkt)
+	{
+		SharedOGRSpatialRef osr(
+			new OGRSpatialReference(),
+			[](OGRSpatialReference* x) {
+				if (x) {
+					OGRSpatialReference::DestroySpatialReference(x);
+				}
+			}
+        );
+        osr->importFromWkt(wkt.c_str());
+		return osr;
+	}
 	UniqueOGRFeature createFeatureWrapper(OGRLayer* layer)
 	{
 		return UniqueOGRFeature(

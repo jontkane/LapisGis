@@ -543,7 +543,7 @@ namespace lapis {
 					break;
 				}
 			}
-			std::unique_ptr<GEOM::GdalEquivalent> geometry = feature.getGeometry().gdalGeometry();
+			std::unique_ptr<OGRGeometry> geometry = feature.getGeometry().gdalGeometryGeneric();
 			gdalFeature->SetGeometry(geometry.get());
 			layer->CreateFeature(gdalFeature.get());
 		}

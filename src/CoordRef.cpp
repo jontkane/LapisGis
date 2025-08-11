@@ -284,11 +284,12 @@ namespace lapis {
 		return _p;
 	}
 
-	std::unique_ptr<OGRSpatialReference> CoordRef::gdalSpatialRef() const
+	OGRSpatialReference* CoordRef::gdalSpatialRef() const
 	{
-        std::unique_ptr<OGRSpatialReference> osr{ new OGRSpatialReference() };
-        osr->importFromWkt(getCompleteWKT().c_str());
-		return osr;
+		if (!_asGdal && !isEmpty()) {
+			_asGdal = ogrSpatialRefFromWkt(getCompleteWKT());
+		}
+		return _asGdal.get();
 	}
 
 	void CoordRef::_crsFromString(const std::string& s) {

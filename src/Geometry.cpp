@@ -58,7 +58,7 @@ namespace lapis {
     std::unique_ptr<OGRPoint> Point::gdalGeometry() const
     {
         std::unique_ptr<OGRPoint> gdalPoint = std::make_unique<OGRPoint>(_point.x, _point.y);
-        gdalPoint->assignSpatialReference(_crs.gdalSpatialRef().get());
+        gdalPoint->assignSpatialReference(_crs.gdalSpatialRef());
         return gdalPoint;
     }
     std::unique_ptr<OGRGeometry> Point::gdalGeometryGeneric() const
@@ -166,7 +166,7 @@ namespace lapis {
             gdalInnerRing.closeRings();
             gdalPolygon->addRing(&gdalInnerRing);
         }
-        gdalPolygon->assignSpatialReference(_crs.gdalSpatialRef().get());
+        gdalPolygon->assignSpatialReference(_crs.gdalSpatialRef());
         return gdalPolygon;
     }
     std::unique_ptr<OGRGeometry> Polygon::gdalGeometryGeneric() const
@@ -326,7 +326,7 @@ namespace lapis {
         for (const Polygon& poly : _polygons) {
             gdalMultiPolygon->addGeometry(poly.gdalGeometry().get());
         }
-        gdalMultiPolygon->assignSpatialReference(_crs.gdalSpatialRef().get());
+        gdalMultiPolygon->assignSpatialReference(_crs.gdalSpatialRef());
         return gdalMultiPolygon;
     }
     std::unique_ptr<OGRGeometry> MultiPolygon::gdalGeometryGeneric() const

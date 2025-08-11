@@ -77,7 +77,7 @@ namespace lapis {
 		SharedPJ& getSharedPtr();
 		const SharedPJ& getSharedPtr() const;
 
-        std::unique_ptr<OGRSpatialReference> gdalSpatialRef() const;
+        OGRSpatialReference* gdalSpatialRef() const;
 
 	private:
 		SharedPJ _p;
@@ -89,6 +89,8 @@ namespace lapis {
 		void _crsFromVector(const std::string& s);
 		void _crsFromLasIO(const LasIO& las);
 		LinearUnit _inferZUnits();
+
+		mutable SharedOGRSpatialRef _asGdal = nullptr;
 	};
 
 	class CoordRefComparator {

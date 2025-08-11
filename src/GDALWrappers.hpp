@@ -26,6 +26,9 @@ namespace lapis {
 	using UniqueGdalString = std::unique_ptr<char, void(*)(char*)>;
 	UniqueGdalString exportToWktWrapper(const OGRSpatialReference& osr);
 
+    using SharedOGRSpatialRef = std::shared_ptr<OGRSpatialReference>;
+    SharedOGRSpatialRef ogrSpatialRefFromWkt(const std::string& wkt);
+
 	using UniqueOGRFeature = std::unique_ptr<OGRFeature, void(*)(OGRFeature*)>;
 	UniqueOGRFeature createFeatureWrapper(OGRLayer* layer);
 
