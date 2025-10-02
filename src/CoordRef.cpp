@@ -116,26 +116,8 @@ namespace lapis {
 		if (isSame(other)) {
 			return true;
 		}
-
-		//compiler please I'm not even the one who defined it as an enum why is this warning coming from my file
-#pragma warning (suppress : 26812)
-		PJ_TYPE thistype = proj_get_type(_p.get());
-		PJ_TYPE othertype = proj_get_type(other.getPtr());
-
-		SharedPJ thishoriz;
-		SharedPJ otherhoriz;
-		if (thistype == PJ_TYPE_COMPOUND_CRS) {
-			thishoriz = getSubCrs(_p, 0);
-		}
-		else {
-			thishoriz = _p;
-		}
-		if (othertype == PJ_TYPE_COMPOUND_CRS) {
-			otherhoriz = getSubCrs(other.getSharedPtr(), 0);
-		}
-		else {
-			otherhoriz = other._p;
-		}
+        SharedPJ thishoriz = getHorizontalCrs(_p);
+        SharedPJ otherhoriz = getHorizontalCrs(other._p);
 		return proj_is_equivalent_to(thishoriz.get(), otherhoriz.get(), PJ_COMP_EQUIVALENT);
 	}
 
@@ -151,19 +133,10 @@ namespace lapis {
 		if (isEmpty()) {
 			return true;
 		}
-		PJ_TYPE t = proj_get_type(_p.get());
-		if (t == PJ_TYPE_PROJECTED_CRS) {
+        SharedPJ horiz = getHorizontalCrs(_p);
+		if (horiz && proj_get_type(horiz.get()) == PJ_TYPE_PROJECTED_CRS) {
 			return true;
-		}
-		if (t == PJ_TYPE_COMPOUND_CRS) {
-			for (int i = 0; i <= 1; ++i) { //the horizontal CRS component will usually be index 0 but no guarantee if the WKT string is constructed oddly
-				SharedPJ wp = getSubCrs(_p, 0);
-				PJ_TYPE subtype = proj_get_type(wp.get());
-				if (subtype == PJ_TYPE_PROJECTED_CRS) {
-					return true;
-				}
-			}
-		}
+        }
 		return false;
 	}
 
@@ -175,14 +148,16 @@ namespace lapis {
 			return std::optional<LinearUnit>();
 		}
 
-		SharedPJ horiz = _p;
+		SharedPJ horiz = getHorizontalCrs(_p);
+		if (!horiz) {
+			return linearUnitPresets::unknownLinear;
+        }
 
-		PJ_TYPE t = proj_get_type(_p.get());
-
-		if (t == PJ_TYPE_COMPOUND_CRS) {
-			horiz = getSubCrs(_p, 0);
-		}
 		SharedPJ cs = makeSharedPJ(proj_crs_get_coordinate_system(ProjContextByThread::get(), horiz.get()));
+		if (!cs) {
+			return std::optional<LinearUnit>();
+		}
+
 		double convFactor = 0;
 		const char* unitName = nullptr; //I'm pretty sure the string that's being put here will be cleaned up when cs is destroyed
 

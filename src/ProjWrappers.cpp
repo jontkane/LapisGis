@@ -74,6 +74,56 @@ namespace lapis {
 		UniqueGdalString wgs = exportToWktWrapper(osr);
 		return projCreateWrapper(wgs.get());
 	}
+	SharedPJ getHorizontalCrs(const SharedPJ& crs)
+	{
+		if (!crs) {
+            return SharedPJ();
+		}
+        PJ_TYPE t = proj_get_type(crs.get());
+		SharedPJ temp;
+		switch (t) {
+		case PJ_TYPE_UNKNOWN:
+		case PJ_TYPE_ELLIPSOID:
+		case PJ_TYPE_PRIME_MERIDIAN:
+		case PJ_TYPE_GEODETIC_REFERENCE_FRAME:
+		case PJ_TYPE_DYNAMIC_GEODETIC_REFERENCE_FRAME:
+		case PJ_TYPE_VERTICAL_REFERENCE_FRAME:
+        case PJ_TYPE_DYNAMIC_VERTICAL_REFERENCE_FRAME:
+		case PJ_TYPE_DATUM_ENSEMBLE:
+		case PJ_TYPE_VERTICAL_CRS:
+		case PJ_TYPE_CONVERSION:
+		case PJ_TYPE_TRANSFORMATION:
+		case PJ_TYPE_CONCATENATED_OPERATION:
+		case PJ_TYPE_OTHER_COORDINATE_OPERATION:
+		case PJ_TYPE_TEMPORAL_DATUM:
+		case PJ_TYPE_ENGINEERING_DATUM:
+		case PJ_TYPE_PARAMETRIC_DATUM:
+		case PJ_TYPE_COORDINATE_METADATA:
+			return SharedPJ();
+		case PJ_TYPE_CRS:
+		case PJ_TYPE_GEOCENTRIC_CRS:
+		case PJ_TYPE_GEOGRAPHIC_CRS:
+		case PJ_TYPE_GEOGRAPHIC_2D_CRS:
+		case PJ_TYPE_PROJECTED_CRS:
+		case PJ_TYPE_TEMPORAL_CRS:
+		case PJ_TYPE_ENGINEERING_CRS:
+		case PJ_TYPE_OTHER_CRS:
+			return crs;
+		case PJ_TYPE_GEOGRAPHIC_3D_CRS:
+            return getHorizontalCrs(makeSharedPJ(proj_crs_demote_to_2D(ProjContextByThread::get(), nullptr, crs.get())));
+		case PJ_TYPE_COMPOUND_CRS:
+			temp = getHorizontalCrs(getSubCrs(crs, 0));
+			if (!temp) {
+                return getHorizontalCrs(getSubCrs(crs, 1));
+			}
+			return temp;
+		case PJ_TYPE_BOUND_CRS:
+		case PJ_TYPE_DERIVED_PROJECTED_CRS:
+            return getHorizontalCrs(makeSharedPJ(proj_get_source_crs(ProjContextByThread::get(), crs.get())));
+		default:
+			return SharedPJ();
+		}
+	}
 	bool setProjDirectory(const std::string& path, PJ_CONTEXT* context)
 	{
 		namespace fs = std::filesystem;

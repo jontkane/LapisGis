@@ -121,7 +121,7 @@ namespace lapis {
 
 		bool variable = vlrs.compressionInfo.chunk_size == lazperf::VariableChunkSize;
 		if (numChunks) {
-			lazperf::InputCb cb{ std::bind(&LasIO::getBytes,this, std::placeholders::_1,std::placeholders::_2) };
+			lazperf::InputCb cb = [&](unsigned char* buf, size_t n) { _ifs->read((char*)buf, n); };
 			_chunks = lazperf::decompress_chunk_table(cb, numChunks, variable);
 		}
 
@@ -210,11 +210,6 @@ namespace lapis {
 	template void LasIO::_readVLRs<std::uint16_t>(std::uint32_t nVLR, std::uint32_t pointOffset);
 	template void LasIO::_readVLRs<std::uint64_t>(std::uint32_t nVLR, std::uint32_t pointOffset);
 
-	void LasIO::getBytes(unsigned char* buffer, size_t count)
-	{
-		_ifs->read((char*)buffer, count);
-	}
-
 	void LasIO::readPoint(char* buffer)
 	{
 
@@ -222,22 +217,35 @@ namespace lapis {
 
 		if (!header.isCompressed()) {
 			_ifs->read(buffer, header.PointLength);
-		} else {
-			if (!_decompressor || _pointInChunk == _currentChunk->count)
-			{
-				lazperf::InputCb cb{ std::bind(&LasIO::getBytes,this, std::placeholders::_1,std::placeholders::_2) };
-				_decompressor = lazperf::build_las_decompressor(cb, header.PointFormat(), header.extraBytes());
-
-				// reset chunk state
-				if (_currentChunk == nullptr)
-					_currentChunk = _chunks.data();
-				else
-					_currentChunk++;
-				_pointInChunk = 0;
+			if (_ifs->gcount() != header.PointLength) {
+				throw InvalidLasFileException("Error reading file");
 			}
+			if (!_ifs->good() && !_ifs->eof()) {
+                throw InvalidLasFileException("Error reading file");
+			}
+			return;
+		}
+		
+		if (!_decompressor) {
+			lazperf::InputCb cb = [&](unsigned char* buf, size_t n) { _ifs->read((char*)buf, n); };
+			_decompressor = lazperf::build_las_decompressor(cb, header.PointFormat(), header.extraBytes());
+			_currentChunk = _chunks.data();
+			_pointInChunk = 0;
+		}
+		if (_currentChunk == nullptr) {
+			throw InvalidLasFileException("Error with compression information");
+        }
+		if (_pointInChunk == _currentChunk->count) {
+			lazperf::InputCb cb = [&](unsigned char* buf, size_t n) { _ifs->read((char*)buf, n); };
+			_decompressor = lazperf::build_las_decompressor(cb, header.PointFormat(), header.extraBytes());
+            _currentChunk++;
+			_pointInChunk = 0;
+		}
 
-			_decompressor->decompress(buffer);
-			_pointInChunk++;
+		_decompressor->decompress(buffer);
+		_pointInChunk++;
+		if (!_ifs->good() && !_ifs->eof()) {
+            throw InvalidLasFileException("Error reading file");
 		}
 	}
 }

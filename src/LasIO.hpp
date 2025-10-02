@@ -242,9 +242,6 @@ namespace lapis {
 		template<class T>
 		void _readBytes(T* ptr);
 
-		//lazperf wants a function with this signature
-		void getBytes(unsigned char* buffer, size_t count);
-
 		std::unique_ptr<std::ifstream> _ifs;
 		lazperf::las_decompressor::ptr _decompressor;
 		lazperf::chunk* _currentChunk = nullptr;

@@ -510,6 +510,10 @@ namespace lapis {
 		crs.importFromWkt(_extent.crs().getCleanEPSG().getCompleteWKT().c_str());
 
 		OGRLayer* layer = outshp->CreateLayer("layer", &crs, GEOM::gdalGeometryTypeStatic, nullptr);
+		if (layer == nullptr) {
+            std::string gdalError = CPLGetLastErrorMsg();
+            throw InvalidVectorFileException("Error when writing " + filename + ": " + gdalError);
+		}
 
 		for (const auto& fieldName : getAllFieldNames()) {
 			OGRFieldDefn newField = OGRFieldDefn(fieldName.c_str(), OFTString);
@@ -528,7 +532,7 @@ namespace lapis {
 				break;
 			}
 		}
-		for (Feature feature : *this) {
+		for (auto&& feature : *this) {
 			UniqueOGRFeature gdalFeature = createFeatureWrapper(layer);
 			for (const auto& fieldName : getAllFieldNames()) {
 				switch (getFieldType(fieldName)) {

@@ -149,22 +149,20 @@ namespace lapis {
     std::unique_ptr<OGRPolygon> Polygon::gdalGeometry() const
     {
         std::unique_ptr<OGRPolygon> gdalPolygon = std::make_unique<OGRPolygon>();
-        OGRLinearRing gdalOuterRing;
-        gdalOuterRing.setNumPoints((int)_outerRing.size());
+        OGRLinearRing* gdalOuterRing = new OGRLinearRing();
         for (const CoordXY& xy : _outerRing) {
-            gdalOuterRing.addPoint(xy.x, xy.y);
+            gdalOuterRing->addPoint(xy.x, xy.y);
         }
-        gdalOuterRing.closeRings(); //shouldn't be necessary but just in case
-        gdalPolygon->addRing(&gdalOuterRing);
+        gdalOuterRing->closeRings(); //shouldn't be necessary but just in case
+        gdalPolygon->addRingDirectly(gdalOuterRing);
 
         for (const std::vector<CoordXY>& innerRing : _innerRings) {
-            OGRLinearRing gdalInnerRing;
-            gdalInnerRing.setNumPoints((int)innerRing.size());
+            OGRLinearRing* gdalInnerRing = new OGRLinearRing();
             for (const CoordXY& xy : innerRing) {
-                gdalInnerRing.addPoint(xy.x, xy.y);
+                gdalInnerRing->addPoint(xy.x, xy.y);
             }
-            gdalInnerRing.closeRings();
-            gdalPolygon->addRing(&gdalInnerRing);
+            gdalInnerRing->closeRings();
+            gdalPolygon->addRingDirectly(gdalInnerRing);
         }
         gdalPolygon->assignSpatialReference(_crs.gdalSpatialRef());
         return gdalPolygon;

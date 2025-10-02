@@ -30,6 +30,8 @@ namespace lapis {
 
 	SharedPJ sharedPJFromOSR(const OGRSpatialReference& osr);
 
+    SharedPJ getHorizontalCrs(const SharedPJ& crs);
+
 	class PJIdentifyWrapper {
 	public:
 		PJIdentifyWrapper(const SharedPJ& p, const std::string& auth = "EPSG");
