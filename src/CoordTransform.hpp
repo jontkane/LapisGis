@@ -7,6 +7,7 @@
 
 
 namespace lapis {
+
 	class CoordTransform {
 	public:
 		CoordTransform() : _tr(nullptr), _conv(), _needZConv(false), _needXYConv(false), _src(), _dst() {}
@@ -37,6 +38,23 @@ namespace lapis {
 		bool _needXYConv;
 		CoordRef _src;
 		CoordRef _dst;
+	};
+
+	class CoordTransformFactory {
+	public:
+        static const CoordTransform& getTransform(const CoordRef& src, const CoordRef& dst);
+	private:
+        using CoordRefPair = std::pair<CoordRef, CoordRef>;
+		class CoordRefPairHasher {
+		public:
+			size_t operator()(const CoordRefPair& p) const;
+		};
+        class CoordRefPairEqual {
+		public:
+			bool operator()(const CoordRefPair& a, const CoordRefPair& b) const;
+        };
+        static std::unordered_map<CoordRefPair, std::unique_ptr<CoordTransform>, CoordRefPairHasher, CoordRefPairEqual> _cache;
+        static std::shared_mutex _mut;
 	};
 
 	template<class T>

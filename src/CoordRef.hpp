@@ -79,6 +79,9 @@ namespace lapis {
 
         OGRSpatialReference* gdalSpatialRef() const;
 
+		size_t hash() const;
+		bool equalForHash(const CoordRef& other) const;
+
 	private:
 		SharedPJ _p;
 		LinearUnit _zUnits;
@@ -89,8 +92,18 @@ namespace lapis {
 		void _crsFromVector(const std::string& s);
 		void _crsFromLasIO(const LasIO& las);
 		LinearUnit _inferZUnits();
+		void _updateCache() const;
 
 		mutable SharedOGRSpatialRef _asGdal = nullptr;
+
+		struct HashCache {
+			mutable bool valid = false;
+			mutable size_t hash = 0;
+			mutable std::string wkt;
+			mutable std::string zUnitName;
+			mutable std::mutex mut;
+		};
+        mutable std::shared_ptr<HashCache> _hashCache = std::make_shared<HashCache>();
 	};
 
 	class CoordRefComparator {

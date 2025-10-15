@@ -53,6 +53,8 @@ namespace lapis {
 	}
 	SharedPJ projCrsToCrsWrapper(SharedPJ from, SharedPJ to)
 	{
+		//static const char* ballpark = "ALLOW_BALLPARK=YES";
+        //static const char* options[2] = { ballpark, nullptr };
 		SharedPJ out = makeSharedPJ(proj_create_crs_to_crs_from_pj(
 			ProjContextByThread::get(), from.get(), to.get(), nullptr, nullptr)
 		);

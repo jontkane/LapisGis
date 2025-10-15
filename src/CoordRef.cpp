@@ -179,6 +179,7 @@ namespace lapis {
 
 	void CoordRef::setZUnits(const LinearUnit& zUnits) {
 		_zUnits = zUnits;
+        _hashCache = std::make_shared<HashCache>(); //this object is no longer identical to anything it's copy-constructed from
 	}
 
 	bool CoordRef::hasVertDatum() const {
@@ -265,6 +266,19 @@ namespace lapis {
 			_asGdal = ogrSpatialRefFromWkt(getCompleteWKT());
 		}
 		return _asGdal.get();
+	}
+
+	size_t CoordRef::hash() const
+	{
+		_updateCache();
+        return _hashCache->hash;
+	}
+
+	bool CoordRef::equalForHash(const CoordRef& other) const
+	{
+		_updateCache();
+		other._updateCache();
+        return _hashCache->wkt == other._hashCache->wkt && _hashCache->zUnitName == other._hashCache->zUnitName;
 	}
 
 	void CoordRef::_crsFromString(const std::string& s) {
@@ -410,14 +424,32 @@ namespace lapis {
 		return LinearUnit(std::string(unitName), convFactor);
 	}
 
+	void CoordRef::_updateCache() const
+	{
+		if (!_hashCache) {
+			_hashCache = std::make_shared<HashCache>();
+        }
+		if (_hashCache->valid) {
+			return;
+        }
+        std::scoped_lock lock{ _hashCache->mut };
+		if (_hashCache->valid) {
+			return;
+		}
+        _hashCache->wkt = getCompleteWKT();
+        _hashCache->zUnitName = _zUnits.name() + "|" + std::to_string(_zUnits.convertOneFromThis(1, linearUnitPresets::meter));
+        _hashCache->hash = std::hash<std::string>()(_hashCache->wkt + _hashCache->zUnitName);
+        _hashCache->valid = true;
+	}
+
 	bool CoordRefComparator::operator()(const CoordRef& a, const CoordRef& b) const
 	{
-		return a.isConsistent(b);
+        return a.equalForHash(b);
 	}
 
 	size_t CoordRefHasher::operator()(const CoordRef& a) const
 	{
-		return std::hash<std::string>()(a.getCompleteWKT() + a.getZUnits().name());
+        return a.hash();
 	}
 
 }
