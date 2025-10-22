@@ -10,8 +10,7 @@ namespace lapis {
 
 	class CoordTransform {
 	public:
-		CoordTransform() : _tr(nullptr), _conv(), _needZConv(false), _needXYConv(false), _src(), _dst() {}
-		CoordTransform(const CoordRef& src, const CoordRef& dst);
+		friend class CoordTransformFactory;
 
 		PJ* getPtr();
 		const PJ* getPtr() const;
@@ -38,6 +37,9 @@ namespace lapis {
 		bool _needXYConv;
 		CoordRef _src;
 		CoordRef _dst;
+
+		CoordTransform() : _tr(nullptr), _conv(), _needZConv(false), _needXYConv(false), _src(), _dst() {}
+		CoordTransform(const CoordRef& src, const CoordRef& dst);
 	};
 
 	class CoordTransformFactory {

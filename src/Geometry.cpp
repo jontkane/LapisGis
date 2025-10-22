@@ -20,7 +20,7 @@ namespace lapis {
 
     void Geometry::projectInPlace(const CoordRef& newCrs)
     {
-        CoordTransform transform(_crs, newCrs);
+        const CoordTransform& transform = CoordTransformFactory::getTransform(_crs, newCrs);
         projectInPlace(transform);
     }
     Point::Point(const OGRGeometry& geom)
@@ -409,5 +409,9 @@ namespace lapis {
         for (int i = 0; i < gdalMultiPolygon->getNumGeometries(); i++) {
             _polygons.emplace_back(*gdalMultiPolygon->getGeometryRef(i), crs);
         }
+    }
+    size_t MultiPolygon::nPolygon() const
+    {
+        return _polygons.size();
     }
 }

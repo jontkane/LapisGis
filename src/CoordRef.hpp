@@ -114,6 +114,9 @@ namespace lapis {
 	public:
 		size_t operator()(const CoordRef& a) const;
 	};
+
+	template<class T>
+    using CoordRefMap = std::unordered_map<CoordRef, T, CoordRefHasher, CoordRefComparator>;
 }
 
 #endif

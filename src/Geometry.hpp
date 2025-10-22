@@ -117,6 +117,8 @@ namespace lapis {
 		MultiPolygon(const OGRGeometry& geom);
 		MultiPolygon(const OGRGeometry& geom, const CoordRef& crs);
 
+		size_t nPolygon() const;
+
 		OGRwkbGeometryType gdalGeometryType() const override;
 		std::unique_ptr<OGRMultiPolygon> gdalGeometry() const;
 		std::unique_ptr<OGRGeometry> gdalGeometryGeneric() const override;

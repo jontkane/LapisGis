@@ -144,7 +144,7 @@ namespace lapis {
 		if (newcrs.isConsistent(crs)) {
 			return;
 		}
-		auto trans = CoordTransform(crs, newcrs);
+        const CoordTransform& trans = CoordTransformFactory::getTransform(crs, newcrs);
 		_transform(trans, 0);
 		crs = newcrs;
 	}
@@ -170,7 +170,7 @@ namespace lapis {
 		size_t presize = _points.size();
 		_points.insert(_points.end(), other.begin(), other.end());
 		if (!crs.isConsistent(other.crs)) {
-			auto trans = CoordTransform(other.crs, crs);
+			const CoordTransform& trans = CoordTransformFactory::getTransform(other.crs, crs);
 			_transform(trans, presize);
 		}
 	}

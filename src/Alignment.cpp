@@ -251,7 +251,7 @@ namespace lapis {
 			return out;
 		}
 
-		CoordTransform crt{ _crs,crs };
+        const CoordTransform& crt = CoordTransformFactory::getTransform(_crs, crs);
 
 		//the strategy here is to transform the four corners of the extent, taking mins/maxes, and setting xres and yres to whatever they need to be to preserve nrow/ncol
 		//if xres and yres are equal in *this, and come out to within an epsilon of equal, they'll be set to their average to preserve square pixels

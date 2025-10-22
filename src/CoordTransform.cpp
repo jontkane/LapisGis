@@ -67,12 +67,13 @@ namespace lapis{
 			std::unique_lock lock{ _mut };
 			auto it = _cache.find(p);
 			if (it == _cache.end()) {
-				_cache[p] = std::make_unique<CoordTransform>(src, dst);
+				_cache[p] = std::unique_ptr<CoordTransform>(new CoordTransform(src, dst));
 				it = _cache.find(p);
 			}
 			return *(it->second);
 		}
 	}
 	std::shared_mutex CoordTransformFactory::_mut = std::shared_mutex{};
-    std::unordered_map<CoordTransformFactory::CoordRefPair, std::unique_ptr<CoordTransform>, CoordTransformFactory::CoordRefPairHasher, CoordTransformFactory::CoordRefPairEqual> CoordTransformFactory::_cache = std::unordered_map<CoordTransformFactory::CoordRefPair, std::unique_ptr<CoordTransform>, CoordTransformFactory::CoordRefPairHasher, CoordTransformFactory::CoordRefPairEqual>{};
+    std::unordered_map<CoordTransformFactory::CoordRefPair, std::unique_ptr<CoordTransform>, CoordTransformFactory::CoordRefPairHasher,
+		CoordTransformFactory::CoordRefPairEqual> CoordTransformFactory::_cache = std::unordered_map<CoordTransformFactory::CoordRefPair, std::unique_ptr<CoordTransform>, CoordTransformFactory::CoordRefPairHasher, CoordTransformFactory::CoordRefPairEqual>{};
 }

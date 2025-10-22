@@ -33,25 +33,25 @@ namespace lapis {
 	}
 
 	TEST_F(CoordTransformTest, noOp) {
-		std::vector<CoordTransform> noops = {
-			CoordTransform(empty,empty)
-			,CoordTransform(empty, stateplane)
-			,CoordTransform(utm, empty)
-			,CoordTransform(utm,utm)
+		std::vector<const CoordTransform*> noops = {
+            &CoordTransformFactory::getTransform(empty,empty),
+			&CoordTransformFactory::getTransform(empty, stateplane),
+			&CoordTransformFactory::getTransform(utm, empty),
+			&CoordTransformFactory::getTransform(utm,utm)
 		};
 		std::vector<xyz> exp = { {0,0,0},
 				{1000,1000,1000},
 				{5000,5000,5000} };
 		for (int i = 0; i < noops.size(); ++i) {
-			noops[i].transformXY(v);
+			noops[i]->transformXY(v);
 			closeXYZ(v, exp);
-			noops[i].transformXYZ(v);
+			noops[i]->transformXYZ(v);
 			closeXYZ(v, exp);
 		}
 	}
 
 	TEST_F(CoordTransformTest, xyOnly) {
-		CoordTransform tr{ stateplane,utm };
+        const CoordTransform& tr = CoordTransformFactory::getTransform(stateplane, utm);
 		tr.transformXY(v, 1);
 		std::vector<xyz> exp = {
 			{0,0,0},
@@ -62,7 +62,7 @@ namespace lapis {
 	}
 
 	TEST_F(CoordTransformTest, xyzTr) {
-		CoordTransform tr{ stateplane,utm };
+        const CoordTransform& tr = CoordTransformFactory::getTransform(stateplane, utm);
 		tr.transformXYZ(v, 1);
 		std::vector<xyz> exp = {
 			{0,0,0},

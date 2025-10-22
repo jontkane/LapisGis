@@ -555,7 +555,7 @@ namespace lapis {
 	template<class T>
 	Raster<T> Raster<T>::resample(const Alignment& a, ExtractMethod method) const {
 		Raster<T> out{ a };
-		CoordTransform transform{ a.crs(),crs() };
+		const CoordTransform& transform = CoordTransformFactory::getTransform( a.crs(),crs() );
 		for (cell_t cell = 0; cell < out.ncell(); ++cell) {
 			CoordXY xy = transform.transformSingleXY(out.xFromCellUnsafe(cell), out.yFromCellUnsafe(cell));
 			auto v = this->extract(xy.x, xy.y, method);

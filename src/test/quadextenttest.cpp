@@ -43,7 +43,7 @@ namespace lapis {
 			,{150,250}
 			,{99,201}
 		};
-		CoordTransform tr(utm, stateplane);
+		const CoordTransform& tr = CoordTransformFactory::getTransform(utm, stateplane);
 		tr.transformXY(test);
 		std::vector<bool> expected = {
 			true
