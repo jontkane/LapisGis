@@ -745,7 +745,7 @@ namespace lapis {
 		if (_extent.crs().isConsistent(newCrs)) {
 			return;
         }
-        CoordTransform transform(_extent.crs(), newCrs);
+		const CoordTransform& transform = CoordTransformFactory::getTransform(_extent.crs(), newCrs);
 
 		for (GEOM& geometry : _geometries) {
 			geometry.projectInPlace(transform);

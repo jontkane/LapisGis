@@ -389,16 +389,11 @@ namespace lapis {
 
 	template<class OUTPUT, class INPUT>
 	inline xtl::xoptional<OUTPUT> viewSRI(const CropView<INPUT>& in) {
-		static CoordTransform toLonLat;
-		static size_t prevRasterHash = 0;
+        const CoordTransform& toLonLat = CoordTransformFactory::getTransform(in.crs(), "EPSG:4326");
 		if (in.ncell() < 9) {
 			return xtl::missing<OUTPUT>();
 		}
 		try {
-			if (prevRasterHash != in.parentRasterHash()) {
-				prevRasterHash = in.parentRasterHash();
-				toLonLat = CoordTransform(in.crs(), "EPSG:4326");
-			}
 			coord_t latitude = toLonLat.transformSingleXY(in.xFromCell(4), in.yFromCell(4)).y;
 			latitude = latitude / 180. * M_PI;
 			xtl::xoptional<OUTPUT> slope = viewSlopeRadians<OUTPUT, INPUT>(in);
