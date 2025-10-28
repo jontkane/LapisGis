@@ -2,8 +2,8 @@ include_guard(GLOBAL)
 
 set(PROJ_DB_PATH "" CACHE FILEPATH "Path to proj.db")
 if(NOT EXISTS "${PROJ_DB_PATH}")
-    message(FATAL_ERROR "proj.db not found at: ${PROJ_DB_PATH}\n"
-	"Please specify it using -DPROJ_DB_PATH")
+    message(WARNING "proj.db not found at: ${PROJ_DB_PATH}\n"
+	"If you need LapisGis to handle proj.db, please specify it using -DPROJ_DB_PATH")
 endif()
 
 function(copy_proj_db_after_build target)
