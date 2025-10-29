@@ -169,6 +169,7 @@ namespace lapis {
 	public:
 		using FeatureType = MutableFeature<GEOM>;
         using ConstFeatureType = ConstFeature<GEOM>;
+		using Geometry = GEOM;
 
         VectorDataset() = default;
 		explicit VectorDataset(const CoordRef& crs);
