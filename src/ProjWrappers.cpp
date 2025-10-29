@@ -23,7 +23,9 @@ namespace lapis {
 		if (!_ctxs.count(thisthread)) {
 			_ctxs.emplace(thisthread, getNewPJContext());
 
+#ifdef LAPISGIS_PROJDB_IN_EXE_DIR
 			setProjDirectory(executableFilePath(), _ctxs.at(thisthread).get());
+#endif
 		}
 		return _ctxs.at(thisthread).get();
 	}
@@ -163,7 +165,13 @@ namespace lapis {
 		return _obj;
 	}
 
+#ifdef LAPISGIS_PROJDB_IN_EXE_DIR
 	bool ProjContextByThread::set_proj_db_for_null_context = setProjDirectory(executableFilePath(), nullptr);
 	bool ProjContextByThread::set_proj_lib = _putenv(("PROJ_LIB="+executableFilePath()).c_str());
 	bool ProjContextByThread::set_proj_data = _putenv(("PROJ_DATA=" + executableFilePath()).c_str());
+#else
+	bool ProjContextByThread::set_proj_db_for_null_context = false;
+	bool ProjContextByThread::set_proj_lib = false;
+    bool ProjContextByThread::set_proj_data = false;
+#endif
 }

@@ -13,6 +13,7 @@ function(copy_proj_db_after_build target)
             "$<TARGET_FILE_DIR:${target}>/proj.db"
         COMMENT "Copying proj.db to output directory for ${target}"
     )
+	target_compile_definitions(LapisGis PRIVATE LAPISGIS_PROJDB_IN_EXE_DIR)
 endfunction()
 
 set(LAPISGIS_DIR ${CMAKE_CURRENT_LIST_DIR})
@@ -35,10 +36,10 @@ add_library(LapisGis STATIC ${LAPISGIS_SOURCES})
 add_library(lazperf STATIC ${LAZPERF_FILES})
 add_library(whereami STATIC ${WHEREAMI_SOURCES})
 
-find_package(GDAL REQUIRED)
-find_package(GeoTIFF REQUIRED)
-find_package(PROJ REQUIRED)
-find_package(xtl REQUIRED)
+find_package(GDAL 3.11 REQUIRED)
+find_package(GeoTIFF 1.7.4 REQUIRED)
+find_package(PROJ 9.6.1 REQUIRED)
+find_package(xtl 0.8.0 REQUIRED)
 
 set(LAPISGIS_EXTERNAL_INCLUDES
 	${GDAL_INCLUDE_DIRS}
