@@ -15,3 +15,4 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
 include(LapisGis.cmake)
 include(LapisGisTest.cmake)
+include(LapisGisTargets.cmake)
