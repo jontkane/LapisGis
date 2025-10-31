@@ -139,4 +139,18 @@ namespace lapis {
 			}
 		}
 	}
+
+	TEST(ExtentTest, reproject) {
+		Extent e{ 0,100,0,100,CoordRef("6340") };
+		Extent reproj = projectExtentOuter(e, CoordRef("26911"));
+		EXPECT_TRUE(reproj.crs().isSame(CoordRef("26911")));
+
+        Extent backProj = projectExtentOuter(reproj, CoordRef("6340"));
+        EXPECT_TRUE(backProj.crs().isSame(CoordRef("6340")));
+
+		EXPECT_LE(backProj.xmin(), e.xmin());
+        EXPECT_GE(backProj.xmax(), e.xmax());
+        EXPECT_LE(backProj.ymin(), e.ymin());
+        EXPECT_GE(backProj.ymax(), e.ymax());
+	}
 }

@@ -62,8 +62,6 @@ namespace lapis {
 			return (x > _xmin) && (x < _xmax) && (y > _ymin) && (y < _ymax);
 		}
 
-		/*eventually, some sort of version of contains that accounts for projections will go here*/
-
 		//functions for modifying the crs
 		void setZUnits(LinearUnit zUnits);
 		void defineCRS(const CoordRef& crs);
@@ -85,8 +83,6 @@ namespace lapis {
 	bool operator!=(const Extent& lhs, const Extent& rhs);
 	std::ostream& operator<<(std::ostream& os, const Extent& e);
 
-	//projectExtentOuter will go here once reprojection is architected
-
 	//This function creates a new extent object with only the overlapping area of the two given extents
 	//If they do not touch, this will throw an exception
 	Extent cropExtent(const Extent& base, const Extent& e);
@@ -96,6 +92,8 @@ namespace lapis {
 	//This function creates a new extent in which the two mins are reduced by bufferSize,
 	//And the two maxes are increased by the same amount
 	Extent bufferExtent(const Extent& base, coord_t bufferSize);
+
+    Extent projectExtentOuter(const Extent& base, const CoordRef& targetCRS);
 }
 
 #endif

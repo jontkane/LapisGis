@@ -1,6 +1,7 @@
 #include"gis_pch.hpp"
 #include"GisExceptions.hpp"
 #include"Extent.hpp"
+#include"QuadExtent.hpp"
 
 namespace lapis {
 	Extent::Extent(const coord_t xmin, const coord_t xmax, const coord_t ymin, const coord_t ymax) : _xmin(xmin), _xmax(xmax), _ymin(ymin), _ymax(ymax) {
@@ -237,6 +238,11 @@ namespace lapis {
 	Extent bufferExtent(const Extent& base, coord_t bufferSize)
 	{
 		return Extent{ base.xmin() - bufferSize,base.xmax() + bufferSize,base.ymin() - bufferSize,base.ymax() + bufferSize, base.crs() };
+	}
+
+	Extent projectExtentOuter(const Extent& base, const CoordRef& targetCRS)
+	{
+		return QuadExtent(base, targetCRS).outerExtent();
 	}
 
 	coord_t Extent::xspan() const
