@@ -48,32 +48,53 @@ namespace lapis {
 			throw CRSMismatchException("CRS mismatch in alignExtent");
 		}
 
+        using snapFuncType = coord_t(*)(coord_t);
+
+		auto snapAndClamp = [&](coord_t val, coord_t res, coord_t origin, coord_t min, coord_t max, snapFuncType snapFunc)->coord_t {
+			val = snapFunc((val - origin) / res) * res + origin;
+			if (val < min)
+                val = min;
+            if (val > max)
+                val = max;
+			return val;
+			};
+
 		coord_t xori = xOrigin();
 		coord_t yori = yOrigin();
+
+		auto snapAndClampX = [&](coord_t val, snapFuncType snapFunc)->coord_t {
+			return snapAndClamp(val, xres(), xori, xmin(), xmax(), snapFunc);
+            };
+        auto snapAndClampY = [&](coord_t val, snapFuncType snapFunc)->coord_t {
+			return snapAndClamp(val, yres(), yori, ymin(), ymax(), snapFunc);
+            };
+
 		coord_t xmin = 0, xmax = 0, ymin = 0, ymax = 0;
-		if (snap == SnapType::near) {
-			xmin = snapExtent(e.xmin(), _xres, xori, round);
-			xmax = snapExtent(e.xmax(), _xres, xori, round);
-			ymin = snapExtent(e.ymin(), _yres, yori, round);
-			ymax = snapExtent(e.ymax(), _yres, yori, round);
-		}
-		else if (snap == SnapType::out) {
-			xmin = snapExtent(e.xmin(), _xres, xori, floor);
-			xmax = snapExtent(e.xmax(), _xres, xori, ceil);
-			ymin = snapExtent(e.ymin(), _yres, yori, floor);
-			ymax = snapExtent(e.ymax(), _yres, yori, ceil);
-		}
-		else if (snap == SnapType::in) {
-			xmin = snapExtent(e.xmin(), _xres, xori, ceil);
-			xmax = snapExtent(e.xmax(), _xres, xori, floor);
-			ymin = snapExtent(e.ymin(), _yres, yori, ceil);
-			ymax = snapExtent(e.ymax(), _yres, yori, floor);
-		}
-		else if (snap == SnapType::ll) {
-			xmin = snapExtent(e.xmin(), _xres, xori, floor);
-			xmax = snapExtent(e.xmax(), _xres, xori, floor);
-			ymin = snapExtent(e.ymin(), _yres, yori, floor);
-			ymax = snapExtent(e.ymax(), _yres, yori, floor);
+        switch (snap) {
+		case SnapType::near:
+            xmin = snapAndClampX(e.xmin(), round);
+            xmax = snapAndClampX(e.xmax(), round);
+            ymin = snapAndClampY(e.ymin(), round);
+            ymax = snapAndClampY(e.ymax(), round);
+			break;
+		case SnapType::out:		
+			xmin = snapAndClampX(e.xmin(), floor);
+			xmax = snapAndClampX(e.xmax(), ceil);
+			ymin = snapAndClampY(e.ymin(), floor);
+            ymax = snapAndClampY(e.ymax(), ceil);
+			break;
+		case SnapType::in:
+            xmin = snapAndClampX(e.xmin(), ceil);
+            xmax = snapAndClampX(e.xmax(), floor);
+            ymin = snapAndClampY(e.ymin(), ceil);
+            ymax = snapAndClampY(e.ymax(), floor);
+			break;
+		case SnapType::ll:
+            xmin = snapAndClampX(e.xmin(), floor);
+            xmax = snapAndClampX(e.xmax(), floor);
+            ymin = snapAndClampY(e.ymin(), floor);
+            ymax = snapAndClampY(e.ymax(), floor);
+			break;
 		}
 		return Extent(xmin, xmax, ymin, ymax, _crs);
 	}

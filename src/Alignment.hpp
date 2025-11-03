@@ -237,12 +237,6 @@ namespace lapis {
 				throw OutsideExtentException("Cell outside extent");
 			}
 		}
-
-	private:
-
-		static coord_t snapExtent(coord_t xy, coord_t res, coord_t origin, coord_t(*snapFunc)(coord_t)) {
-			return snapFunc((xy - origin) / res) * res + origin;
-		}
 	};
 
 	class CellIterator {
