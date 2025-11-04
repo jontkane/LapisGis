@@ -7,6 +7,8 @@
 
 namespace lapis {
 
+
+
 	//more optimized versions of aggregate for the calls which get made the most
 	template<class T>
 	inline Raster<T> aggregateSum(const Raster<T>& r, const Alignment& a) {
@@ -1034,6 +1036,101 @@ namespace lapis {
 		}
 
 		return outShp;
+	}
+
+	//as mosaic below, but no safety checks are performed to ensure consistent alignment
+	template<class T, class VALUECOMBINER>
+	inline Raster<T> mosaicUnsafe(const std::vector<Raster<T>*>& rasters, VALUECOMBINER combiner) {
+		if (rasters.size() == 0) {
+            throw std::invalid_argument("No rasters provided to mosaicUnsafe function");
+		}
+		if (!rasters[0]) {
+			throw std::invalid_argument("Null raster provided to mosaicUnsafe function");
+        }
+        Alignment outAlign = *rasters[0];
+		for (size_t i = 1; i < rasters.size(); ++i) {
+			if (!rasters[i]) {
+				continue;
+            }
+			outAlign = extendAlignment(outAlign, *rasters[i], SnapType::near);
+        }
+        Raster<T> outRaster{ outAlign };
+		for (Raster<T>* r : rasters) {
+			if (!r) {
+				continue;
+            }
+			for (cell_t cell : CellIterator(outRaster, *r, SnapType::near)) {
+                coord_t x = outRaster.xFromCellUnsafe(cell);
+                coord_t y = outRaster.yFromCellUnsafe(cell);
+                cell_t rCell = r->cellFromXYUnsafe(x, y);
+                auto outV = outRaster.atCellUnsafe(cell);
+				auto rV = r->atCellUnsafe(rCell);
+				if (!rV.has_value()) {
+					continue;
+				}
+				if (!outV.has_value()) {
+					outV.has_value() = true;
+					outV.value() = rV.value();
+				}
+				else {
+					auto combined = combiner(outV, rV);
+                    outV.has_value() = combined.has_value();
+					outV.value() = combined.value();
+				}
+			}
+		}
+		return outRaster;
+	}
+
+	//returns a raster whose extent is the union of the extents of the input rasters
+    //for cells in the overlap between multiple rasters, the value is determined by the VALUECOMBINER function
+    //VALUECOMBINER should be a callable with the signature xtl::xoptional<T> func(xtl::xoptional<T>, xtl::xoptional<T>)
+    //when VALUECOMBINER is called, the first argument is the current value in the output raster, and the second argument is the value from one of the input rasters
+    //thus, only combiners that make sense over streaming data will work correctly here
+    //however, it is guaranteed that the values will be fed in in the same order as the rasters you provide, with NoData values skipped
+	//throws an error unless the rasters have consistent alignments (same origin, resolution, and CRS, within floating point rounding error)
+    //also throws an error if the input vector is empty
+	template<class T, class VALUECOMBINER>
+	inline Raster<T> mosaic(const std::vector<Raster<T>*>& rasters, VALUECOMBINER combiner) {
+		if (rasters.size() == 0) {
+			throw std::invalid_argument("No rasters provided to mosaic function");
+        }
+        coord_t xres = rasters[0]->xres();
+        coord_t yres = rasters[0]->yres();
+		coord_t xorigin = rasters[0]->xOrigin();
+		coord_t yorigin = rasters[0]->yOrigin();
+        CoordRef crs = rasters[0]->crs();
+		for (size_t i = 1; i < rasters.size(); ++i) {
+            bool match = true;
+            match = match && (std::abs(rasters[i]->xres() - xres) < LAPIS_EPSILON);
+            match = match && (std::abs(rasters[i]->yres() - yres) < LAPIS_EPSILON);
+            match = match && (std::abs(rasters[i]->xOrigin() - xorigin) < LAPIS_EPSILON);
+            match = match && (std::abs(rasters[i]->yOrigin() - yorigin) < LAPIS_EPSILON);
+			match = match && crs.isConsistent(rasters[i]->crs());
+			if (!match) {
+                throw AlignmentMismatchException("Alignment mismatch in mosaic function");
+			}
+		}
+		return mosaicUnsafe(rasters, combiner);
+	}
+
+    template<class T>
+	inline xtl::xoptional<T> firstCombiner(xtl::xoptional<T> a, xtl::xoptional<T> b) {
+		if (a.has_value()) {
+			return a;
+		}
+		return b;
+	}
+
+	template<class T>
+	inline xtl::xoptional<T> maxCombiner(xtl::xoptional<T> a, xtl::xoptional<T> b) {
+		if (!a.has_value()) {
+			return b;
+		}
+		if (!b.has_value()) {
+			return a;
+		}
+		return std::max(a.value(), b.value());
 	}
 }
 

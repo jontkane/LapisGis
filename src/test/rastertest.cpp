@@ -20,17 +20,17 @@ namespace lapis {
 	};
 
 	template<class T>
-	void verifyRaster(Raster<T> r, std::vector<T> expVal, std::vector<bool> expHasVal) {
-		EXPECT_EQ(r.ncell(), (cell_t)expVal.size());
-		EXPECT_EQ(r.ncell(), (cell_t)expHasVal.size());
+	void verifyRaster(const Raster<T>& r, const std::vector<T>& expVal, const std::vector<bool>& expHasVal) {
+		ASSERT_EQ(r.ncell(), (cell_t)expVal.size());
+		ASSERT_EQ(r.ncell(), (cell_t)expHasVal.size());
 
 		for (size_t i = 0; i < expVal.size(); ++i) {
 			if (expHasVal[i]) {
-				EXPECT_TRUE(r[i].has_value());
-				EXPECT_EQ(expVal[i], r[i].value());
+				EXPECT_TRUE(r.atCell(i).has_value());
+				EXPECT_EQ(expVal.at(i), r.atCell(i).value());
 			}
 			else {
-				EXPECT_FALSE(r[i].has_value());
+				EXPECT_FALSE(r.atCell(i).has_value());
 			}
 		}
 	}
@@ -285,8 +285,8 @@ namespace lapis {
 		}
 
 		Extent contained{ 0.1,1.9,0.1,1.9 };
-		Extent overlaps{ -1,1.9,-1,1.9 };
-		Extent noOverlap{ -1,-0.1,-1,-0.1 };
+		Extent overlaps{ -1.1,1.9,-1.1,1.9 };
+		Extent noOverlap{ -1.1,-0.1,-1.1,-0.1 };
 
 		Raster<int> rtest = extendRaster(r, contained, SnapType::near);
 		EXPECT_EQ(r, rtest);

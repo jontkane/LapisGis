@@ -173,7 +173,14 @@ namespace lapis {
     }
     void Polygon::addInnerRing(const std::vector<CoordXY>& innerRing)
     {
-        _innerRings.push_back(innerRing);
+        std::vector<CoordXY> copy = innerRing;
+        if (copy.back() != copy.front()) {
+            copy.push_back(copy.front());
+        }
+        if (copy.size() < 4) {
+            throw std::runtime_error("Rings must have at least 3 points");
+        }
+        _innerRings.push_back(std::move(copy));
     }
     const std::vector<CoordXY>& Polygon::getOuterRing() const {
         return _outerRing;

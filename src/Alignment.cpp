@@ -52,10 +52,8 @@ namespace lapis {
 
 		auto snapAndClamp = [&](coord_t val, coord_t res, coord_t origin, coord_t min, coord_t max, snapFuncType snapFunc)->coord_t {
 			val = snapFunc((val - origin) / res) * res + origin;
-			if (val < min)
-                val = min;
-            if (val > max)
-                val = max;
+			if (std::fabs(val - min) < LAPIS_EPSILON) return min;
+			if (std::fabs(val - max) < LAPIS_EPSILON) return max;
 			return val;
 			};
 
