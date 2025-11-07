@@ -216,6 +216,9 @@ namespace lapis {
         void projectInPlace(const CoordRef& newCrs);
         void projectInPlacePreciseExtent(const CoordRef& newCrs);
 
+		void appendFile(const std::string& filename);
+        void appendFile(const std::filesystem::path& filename);
+
 
 		template<class attribute_pointer>
 		class base_iterator {
@@ -431,9 +434,12 @@ namespace lapis {
 		gdalAllRegisterThreadSafe();
 		UniqueGdalDataset shp = vectorGDALWrapper(filename);
 		if (!shp) {
-			return;
+            throw InvalidVectorFileException("Could not open " + filename);
 		}
 		OGRLayer* layer = shp->GetLayer(0);
+		if (!layer) {
+			throw InvalidVectorFileException("Could not read layer from " + filename);
+        }
 		if (wkbFlatten(layer->GetGeomType()) != GEOM::gdalGeometryTypeStatic) {
 			if (wkbFlatten(layer->GetGeomType()) == wkbPolygon && GEOM::gdalGeometryTypeStatic == wkbMultiPolygon) {
 				//esri shp files do not have a MultiPolygon type, so this mismatch is common
@@ -739,6 +745,97 @@ namespace lapis {
 				newExtent = extendExtent(newExtent, geometry.boundingBox());
 			}
 		}
+	}
+
+	template<class GEOM>
+	inline void VectorDataset<GEOM>::appendFile(const std::string& filename)
+	{
+		gdalAllRegisterThreadSafe();
+		UniqueGdalDataset otherShp = vectorGDALWrapper(filename);
+		if (!otherShp) {
+            throw InvalidVectorFileException("Could not open vector file " + filename + " to append");
+		}
+		OGRLayer* layer = otherShp->GetLayer(0);
+		if (!layer) {
+			throw InvalidVectorFileException("Could not open vector file " + filename + " to append");
+        }
+		if (wkbFlatten(layer->GetGeomType()) != GEOM::gdalGeometryTypeStatic) {
+			if (wkbFlatten(layer->GetGeomType()) == wkbPolygon && GEOM::gdalGeometryTypeStatic == wkbMultiPolygon) {
+				//esri shp files do not have a MultiPolygon type, so this mismatch is common
+			}
+			else {
+				throw WrongGeometryTypeException(filename + " is not the expected geometry type");
+			}
+		}
+		if (layer->GetFeatureCount()==0) {
+			return;
+        }
+
+		OGRSpatialReference* osr = layer->GetSpatialRef();
+		CoordRef otherCrs(osr);
+		if (!otherCrs.isConsistentHoriz(_extent.crs())) {
+            throw CRSMismatchException("Cannot append vector file " + filename + " with different CRS");
+        }
+
+		OGRFeature* exampleFeature = layer->GetFeature(0);
+		for (const std::string& fieldName : getAllFieldNames()) {
+            int idx = exampleFeature->GetFieldIndex(fieldName.c_str());
+			if (idx == -1) {
+                throw std::runtime_error("Field " + fieldName + " not found in " + filename + " when appending vector dataset");
+			}
+			OGRFieldDefn* field = exampleFeature->GetFieldDefnRef(idx);
+			switch (field->GetType()) {
+			case OFTInteger:
+			case OFTInteger64:
+				if (getFieldType(fieldName) != FieldType::Integer) {
+					throw WrongFieldTypeException("Field " + fieldName + " has different type in " + filename + " when appending vector dataset");
+                }
+				break;
+			case OFTReal:
+				if (getFieldType(fieldName) != FieldType::Real) {
+					throw WrongFieldTypeException("Field " + fieldName + " has different type in " + filename + " when appending vector dataset");
+                }
+				break;
+			case OFTString:
+				if (getFieldType(fieldName) != FieldType::String) {
+					throw WrongFieldTypeException("Field " + fieldName + " has different type in " + filename + " when appending vector dataset");
+                }
+                setStringFieldWidth(fieldName, std::max(getStringFieldWidth(fieldName), static_cast<size_t>(field->GetWidth())));
+				break;
+			default:
+				throw std::runtime_error("unimplemented field type when reading shapefile");
+			}
+		}
+
+        _reserve(nFeature() + layer->GetFeatureCount());
+		for (const OGRFeatureUniquePtr& feature : layer) {
+			OGRGeometry* gdalGeometry = feature->GetGeometryRef();
+			GEOM lapisGeometry{ *gdalGeometry, otherCrs };
+			addGeometry(lapisGeometry);
+			for (const std::string& fieldName : getAllFieldNames()) {
+				int idx = feature->GetFieldIndex(fieldName.c_str());
+				OGRFieldDefn* field = feature->GetFieldDefnRef(idx);
+				switch (getFieldType(fieldName)) {
+                case FieldType::Integer:
+					back().setIntegerField(fieldName, feature->GetFieldAsInteger64(fieldName.c_str()));
+					break;
+                case FieldType::Real:
+					back().setRealField(fieldName, feature->GetFieldAsDouble(fieldName.c_str()));
+					break;
+                case FieldType::String:
+					back().setStringField(fieldName, feature->GetFieldAsString(fieldName.c_str()));
+					break;
+				default:
+					throw WrongFieldTypeException("Unimplemented field type when reading shapefile");
+				}
+            }
+		}
+	}
+
+	template<class GEOM>
+	inline void VectorDataset<GEOM>::appendFile(const std::filesystem::path& filename)
+	{
+        appendFile(filename.string());
 	}
 
 	template<class GEOM>

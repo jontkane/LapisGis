@@ -79,4 +79,38 @@ namespace lapis {
 
         EXPECT_NEAR(mp2.area(), (16.0 - 1.0) + 1.0, 0.01);
     }
+
+    TEST(VectorTest, Append) {
+        std::string file1 = LAPISGISTESTFILES;
+        file1 += "/testpoints.shp";
+        VectorDataset<Point> p1{ file1 };
+        VectorDataset<Point> append{ file1 };
+
+        std::string file2 = LAPISGISTESTFILES;
+        file2 += "/testpoints.shp";
+        VectorDataset<Point> p2{ file2 };
+        size_t n1 = p1.nFeature();
+        size_t n2 = p2.nFeature();
+        append.appendFile(file2);
+        ASSERT_EQ(append.nFeature(), n1 + n2);
+
+        for (size_t i = 0; i < n1; ++i) {
+            auto expected = p1.getFeature(i);
+            auto feature1 = append.getFeature(i);
+            auto feature2 = append.getFeature(i + n1);
+
+            EXPECT_EQ(feature1.getGeometry().x(), expected.getGeometry().x());
+            EXPECT_EQ(feature1.getGeometry().y(), expected.getGeometry().y());
+            EXPECT_EQ(feature1.getIntegerField("integer"), expected.getIntegerField("integer"));
+            EXPECT_EQ(feature1.getRealField("double"), expected.getRealField("double"));
+            EXPECT_EQ(feature1.getStringField("string"), expected.getStringField("string"));
+            
+            EXPECT_EQ(feature2.getGeometry().x(), expected.getGeometry().x());
+            EXPECT_EQ(feature2.getGeometry().y(), expected.getGeometry().y());
+            EXPECT_EQ(feature2.getIntegerField("integer"), expected.getIntegerField("integer"));
+            EXPECT_EQ(feature2.getRealField("double"), expected.getRealField("double"));
+            EXPECT_EQ(feature2.getStringField("string"), expected.getStringField("string"));
+
+        }
+    }
 }
