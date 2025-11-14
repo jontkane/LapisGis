@@ -113,4 +113,43 @@ namespace lapis {
 
         }
     }
+
+    TEST(VectorTest, MultiFileConstructor) {
+        std::string file1 = LAPISGISTESTFILES;
+        file1 += "/testpoints.shp";
+        std::string file2 = LAPISGISTESTFILES;
+        file2 += "/testpoints.shp";
+        std::vector<std::filesystem::path> files = { file1, file2 };
+        VectorDataset<Point> p{ files };
+        //expecting this to be equivalent to appending file2 to file1
+        VectorDataset<Point> expected{ file1 };
+        expected.appendFile(file2);
+        ASSERT_EQ(p.nFeature(), expected.nFeature());
+        for (size_t i = 0; i < p.nFeature(); ++i) {
+            auto featureP = p.getFeature(i);
+            auto featureExpected = expected.getFeature(i);
+            EXPECT_EQ(featureP.getGeometry().x(), featureExpected.getGeometry().x());
+            EXPECT_EQ(featureP.getGeometry().y(), featureExpected.getGeometry().y());
+            EXPECT_EQ(featureP.getIntegerField("integer"), featureExpected.getIntegerField("integer"));
+            EXPECT_EQ(featureP.getRealField("double"), featureExpected.getRealField("double"));
+            EXPECT_EQ(featureP.getStringField("string"), featureExpected.getStringField("string"));
+        }
+    }
+
+    TEST(VectorTest, AddFeature) {
+        std::string file = LAPISGISTESTFILES;
+        file += "/testpoints.shp";
+        VectorDataset<Point> p{ file };
+        size_t nOriginal = p.nFeature();
+        auto featureToAdd = p.getFeature(0);
+        p.addFeature(featureToAdd);
+        ASSERT_EQ(p.nFeature(), nOriginal + 1);
+        auto addedFeature = p.getFeature(nOriginal);
+        featureToAdd = p.getFeature(0); //we invalidated the iterators by adding an element
+        EXPECT_EQ(addedFeature.getGeometry().x(), featureToAdd.getGeometry().x());
+        EXPECT_EQ(addedFeature.getGeometry().y(), featureToAdd.getGeometry().y());
+        EXPECT_EQ(addedFeature.getIntegerField("integer"), featureToAdd.getIntegerField("integer"));
+        EXPECT_EQ(addedFeature.getRealField("double"), featureToAdd.getRealField("double"));
+        EXPECT_EQ(addedFeature.getStringField("string"), featureToAdd.getStringField("string"));
+    }
 }

@@ -175,6 +175,7 @@ namespace lapis {
 		explicit VectorDataset(const CoordRef& crs);
 		VectorDataset(const std::string& filename);
 		explicit VectorDataset(const std::filesystem::path& filename);
+        VectorDataset(const std::vector<std::filesystem::path>& filenames);
 
 		void writeShapefile(const std::filesystem::path& filename) const;
 		void writeShapefile(const std::string& filename) const;
@@ -191,6 +192,8 @@ namespace lapis {
 		void replaceGeometry(size_t index, const GEOM& geom);
 		void replaceGeometryPreciseExtent(size_t index, const GEOM& geom);
 		void addGeometry(const GEOM& g);
+		void addFeature(const ConstFeature<GEOM>& feature);
+		void addFeatureUnsafe(const ConstFeature<GEOM>& feature);
 
 		const CoordRef& crs() const;
 		const Extent& extent() const;
@@ -218,6 +221,8 @@ namespace lapis {
 
 		void appendFile(const std::string& filename);
         void appendFile(const std::filesystem::path& filename);
+
+		void reserve(size_t n);
 
 
 		template<class attribute_pointer>
@@ -249,7 +254,6 @@ namespace lapis {
 		MutableFeature<GEOM> back();
 
 	private:
-		void _reserve(size_t n);
 		std::vector<GEOM> _geometries;
 		Extent _extent;
 		AttributeTable _attributes;
@@ -449,7 +453,7 @@ namespace lapis {
 			}
 		}
 		bool initFields = false;
-		_reserve(layer->GetFeatureCount());
+		reserve(layer->GetFeatureCount());
 		OGRSpatialReference* osr = layer->GetSpatialRef();
 		CoordRef crs(osr);
 		OGREnvelope envelope;
@@ -504,6 +508,126 @@ namespace lapis {
 		: VectorDataset<GEOMETRY>(filename.string())
 	{
     }
+
+	template<class GEOM>
+	inline VectorDataset<GEOM>::VectorDataset(const std::vector<std::filesystem::path>& filenames)
+	{
+		namespace fs = std::filesystem;
+		//first do a pass through the files to ensure they have the correct geometry type
+		//and all have matching CRSes and attributes
+		//keep a running count of features so we can reserve the sum
+        size_t totalFeatures = 0;
+        CoordRef commonCrs;
+		std::vector<std::string> fieldNames;
+		std::vector<FieldType> fieldTypes;
+        std::vector<size_t> fieldWidths;
+        bool firstFile = true;
+		for (const fs::path& filename : filenames) {
+			gdalAllRegisterThreadSafe();
+			UniqueGdalDataset shp = vectorGDALWrapper(filename.string());
+			if (!shp) {
+				throw InvalidVectorFileException("Could not open " + filename.string());
+			}
+			OGRLayer* layer = shp->GetLayer(0);
+			if (!layer) {
+				throw InvalidVectorFileException("Could not read layer from " + filename.string());
+			}
+			if (wkbFlatten(layer->GetGeomType()) != GEOM::gdalGeometryTypeStatic) {
+				if (wkbFlatten(layer->GetGeomType()) == wkbPolygon && GEOM::gdalGeometryTypeStatic == wkbMultiPolygon) {
+					//esri shp files do not have a MultiPolygon type, so this mismatch is common
+				}
+				else {
+					throw WrongGeometryTypeException(filename.string() + " is not the expected geometry type");
+				}
+			}
+
+			if (firstFile) {
+                commonCrs = CoordRef(layer->GetSpatialRef());
+				for (int i = 0; i < layer->GetLayerDefn()->GetFieldCount(); ++i) {
+					OGRFieldDefn* field = layer->GetLayerDefn()->GetFieldDefn(i);
+					fieldNames.push_back(field->GetNameRef());
+					switch (field->GetType()) {
+					case OFTInteger:
+					case OFTInteger64:
+						fieldTypes.push_back(FieldType::Integer);
+                        fieldWidths.push_back(0);
+						break;
+					case OFTReal:
+						fieldTypes.push_back(FieldType::Real);
+                        fieldWidths.push_back(0);
+						break;
+					case OFTString:
+						fieldTypes.push_back(FieldType::String);
+                        fieldWidths.push_back(static_cast<size_t>(field->GetWidth()));
+						break;
+					default:
+						throw std::runtime_error("unimplemented field type when reading shapefile");
+                    }
+				}
+				totalFeatures += layer->GetFeatureCount();
+				firstFile = false;
+				continue;
+			}
+
+            CoordRef fileCrs(layer->GetSpatialRef());
+			if (!commonCrs.isConsistent(fileCrs)) {
+				throw CRSMismatchException("CRS of " + filename.string() + " does not match other files in the set");
+            }
+			if (layer->GetLayerDefn()->GetFieldCount() != static_cast<int>(fieldNames.size())) {
+				throw std::runtime_error("Attribute table of " + filename.string() + " does not match other files in the set");
+			}
+			for (int i = 0; i < layer->GetLayerDefn()->GetFieldCount(); ++i) {
+				OGRFieldDefn* field = layer->GetLayerDefn()->GetFieldDefn(i);
+				if (field->GetNameRef() != fieldNames[i]) {
+					throw std::runtime_error("Attribute table of " + filename.string() + " does not match other files in the set");
+				}
+				FieldType expectedType = fieldTypes[i];
+				FieldType fieldType;
+				switch (field->GetType()) {
+				case OFTInteger:
+				case OFTInteger64:
+					fieldType = FieldType::Integer;
+					break;
+				case OFTReal:
+					fieldType = FieldType::Real;
+					break;
+				case OFTString:
+					fieldType = FieldType::String;
+					break;
+				default:
+					throw std::runtime_error("unimplemented field type when reading shapefile");
+				}
+				if (fieldType != expectedType) {
+					throw std::runtime_error("Attribute table of " + filename.string() + " does not match other files in the set");
+				}
+				if (fieldType == FieldType::String) {
+					size_t width = static_cast<size_t>(field->GetWidth());
+                    fieldWidths[i] = std::max(fieldWidths[i], width);
+                }
+            }
+
+            totalFeatures += layer->GetFeatureCount();
+		}
+
+        reserve(totalFeatures);
+        _extent.defineCRS(commonCrs);
+		for (size_t i = 0; i < fieldNames.size(); ++i) {
+			switch (fieldTypes[i]) {
+			case FieldType::Integer:
+				addIntegerField(fieldNames[i]);
+				break;
+			case FieldType::Real:
+				addRealField(fieldNames[i]);
+				break;
+			case FieldType::String:
+				addStringField(fieldNames[i], fieldWidths[i]);
+				break;
+			}
+        }
+		for (const fs::path& filename : filenames) {
+			appendFile(filename);
+        }
+	}
 
     template<class GEOM>
 	inline void VectorDataset<GEOM>::writeShapefile(const std::string& filename) const
@@ -628,6 +752,67 @@ namespace lapis {
 		}
 		else {
 			_extent = extendExtent(_extent, g.boundingBox());
+        }
+	}
+
+	template<class GEOM>
+	inline void VectorDataset<GEOM>::addFeature(const ConstFeature<GEOM>& feature)
+	{
+		if (!feature.getGeometry().crs().isConsistent(_extent.crs())) {
+			throw CRSMismatchException("Feature CRS does not match dataset CRS");
+        }
+		for (const auto& fieldName : feature.getAllFieldNames()) {
+			if (!fieldExists(fieldName)) {
+				throw std::runtime_error("Feature attribute table does not match dataset attribute table");
+			}
+			if (getFieldType(fieldName) != feature.getFieldType(fieldName)) {
+				throw WrongFieldTypeException("Feature attribute table does not match dataset attribute table");
+			}
+        }
+		addFeatureUnsafe(feature);
+	}
+
+	template<class GEOM>
+	inline void VectorDataset<GEOM>::addFeatureUnsafe(const ConstFeature<GEOM>& feature)
+	{
+		//making a deep copy first to avoid invalidating the feature if it's from this vectordataset
+
+        GEOM geometryCopy = feature.getGeometry();
+        std::unordered_map<std::string, std::variant<int64_t, double, std::string>> attributeValues;
+		for (const auto& fieldName : getAllFieldNames()) {
+			switch (getFieldType(fieldName)) {
+			case FieldType::String:
+				attributeValues[fieldName] = feature.getStringField(fieldName);
+				break;
+			case FieldType::Real:
+				attributeValues[fieldName] = feature.getRealField(fieldName);
+				break;
+			case FieldType::Integer:
+				attributeValues[fieldName] = feature.getIntegerField(fieldName);
+				break;
+            }
+		}
+        addGeometry(geometryCopy);
+		for (const auto& fieldName : getAllFieldNames()) {
+			switch (getFieldType(fieldName)) {
+			case FieldType::String:
+                back().setStringField(fieldName, std::get<std::string>(attributeValues[fieldName]));
+                break;
+            case FieldType::Real:
+				back().setRealField(fieldName,  std::get<double>(attributeValues[fieldName]));
+                break;
+            case FieldType::Integer:
+				back().setIntegerField(fieldName,  std::get<int64_t>(attributeValues[fieldName]));
+                break;
+			}
+		}
+
+
+		if (nFeature() == 1) {
+			_extent = geometryCopy.boundingBox();
+		}
+		else {
+			_extent = extendExtent(_extent, geometryCopy.boundingBox());
         }
 	}
 
@@ -807,7 +992,7 @@ namespace lapis {
 			}
 		}
 
-        _reserve(nFeature() + layer->GetFeatureCount());
+        reserve(nFeature() + layer->GetFeatureCount());
 		for (const OGRFeatureUniquePtr& feature : layer) {
 			OGRGeometry* gdalGeometry = feature->GetGeometryRef();
 			GEOM lapisGeometry{ *gdalGeometry, otherCrs };
@@ -923,7 +1108,7 @@ namespace lapis {
 	}
 
 	template<class GEOM>
-	inline void VectorDataset<GEOM>::_reserve(size_t n) {
+	inline void VectorDataset<GEOM>::reserve(size_t n) {
 		_attributes._reserve(n);
         _geometries.reserve(n);
 	}
