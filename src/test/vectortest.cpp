@@ -152,4 +152,21 @@ namespace lapis {
         EXPECT_EQ(addedFeature.getRealField("double"), featureToAdd.getRealField("double"));
         EXPECT_EQ(addedFeature.getStringField("string"), featureToAdd.getStringField("string"));
     }
+
+    TEST(VectorTest, EmptyDatasetFromTemplate) {
+        std::string exampleFile = LAPISGISTESTFILES;
+        exampleFile += "/testpoints.shp";
+        VectorDataset<Point> p{ exampleFile };
+
+        VectorDataset<Point> fromTemplate = emptyVectorDatasetFromTemplate<Point>(p);
+        ASSERT_EQ(fromTemplate.nFeature(), 0);
+        ASSERT_TRUE(fromTemplate.crs().isConsistent(p.crs()));
+        ASSERT_EQ(fromTemplate.getAllFieldNames().size(), p.getAllFieldNames().size());
+        for (const auto& fieldName : p.getAllFieldNames()) {
+            ASSERT_EQ(fromTemplate.getFieldType(fieldName), p.getFieldType(fieldName));
+            if (p.getFieldType(fieldName) == FieldType::String) {
+                ASSERT_EQ(fromTemplate.getStringFieldWidth(fieldName), p.getStringFieldWidth(fieldName));
+            }
+        }
+    }
 }

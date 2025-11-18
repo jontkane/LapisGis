@@ -261,6 +261,9 @@ namespace lapis {
 		void _projectInPlaceShared(const CoordRef& newCrs);
 	};
 
+	template<class GEOM>
+    VectorDataset<GEOM> emptyVectorDatasetFromTemplate(const VectorDataset<GEOM>& templateDataset);
+
     template<class GEOM, class attribute_pointer>
 	class Feature {
 	public:
@@ -1169,6 +1172,25 @@ namespace lapis {
 	inline T Feature<GEOM, attribute_pointer>::getNumericField(const std::string& name) const
 	{
         return _attributeRow.getNumericField<T>(name);
+	}
+	template<class GEOM>
+	VectorDataset<GEOM> emptyVectorDatasetFromTemplate(const VectorDataset<GEOM>& templateDataset)
+	{
+        VectorDataset<GEOM> newDataset(templateDataset.crs());
+		for (const auto& fieldName : templateDataset.getAllFieldNames()) {
+			switch (templateDataset.getFieldType(fieldName)) {
+			case FieldType::String:
+				newDataset.addStringField(fieldName, templateDataset.getStringFieldWidth(fieldName));
+				break;
+			case FieldType::Real:
+				newDataset.addRealField(fieldName);
+				break;
+			case FieldType::Integer:
+				newDataset.addIntegerField(fieldName);
+				break;
+            }
+		}
+		return newDataset;
 	}
 }
 
