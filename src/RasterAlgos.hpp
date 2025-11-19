@@ -1132,6 +1132,203 @@ namespace lapis {
 		}
 		return std::max(a.value(), b.value());
 	}
+
+	namespace detail {
+		//helper function for euclidean distance transform
+		//returns a 'half' EDT, meaning it only considers true pixels which are on the same row or above the current pixel
+		//the values of the raster are in squared pixel units
+		template<class T, class PRED>
+		inline Raster<coord_t> halfEDT(const Raster<T>& in, const PRED& predicate) {
+			//This algorithm is lifted from https://www.researchgate.net/profile/Heinz_Breu/publication/3192421_Linear_Time_Euclidean_Distance_Transform_Algorithms/links/54eca0fe0cf27fbfd771295e.pdf
+			//My comments will refer to the notation in that article for brevity
+			//This function performs the half-EDT laid out in full in that article
+
+			Raster<CoordXY> candidates{ (Alignment)in }; //the candidate pixels for the voronoi cells of each row. Each row of the xtensor refers to Candidates_r for that row.
+			//A missing value means that Candidates_r has no candidate corresponding to that column, and will be skipped over in the actual implementation
+
+			for (rowcol_t row = 0; row < candidates.nrow(); ++row) {
+				for (rowcol_t col = 0; col < candidates.ncol(); ++col) { //Initializing candidates
+					auto v = in.atRCUnsafe(row, col);
+					auto vcandidate = candidates.atRCUnsafe(row, col);
+					bool feature = v.has_value() && predicate(v.value());
+					if (feature) { //canopy on the row in question is always a candidate
+						vcandidate.has_value() = true;
+						vcandidate.value() = CoordXY{ (coord_t)col, (coord_t)row };
+					}
+					else {
+						if (row == 0) { //candidates_0 is special cased
+							vcandidate.has_value() = false;
+						}
+						else {
+							vcandidate.has_value() = candidates.atRCUnsafe(row - 1, col).has_value();
+							vcandidate.value() = candidates.atRCUnsafe(row - 1, col).value();
+						}
+					}
+				}
+			}
+
+			std::vector<std::deque<CoordXY>> L{}; //L from the paper. Each element of the vector corresponds to L_r for a given row.
+			//The stacks represent the actual voronoi cells intersection row r, once the initialization is complete
+
+			auto remove = [](CoordXY u, CoordXY v, CoordXY w, rowcol_t r) { //remove function from the linked paper. Returns true if candidates u and w force v out of the final list
+				auto lhs = (w.x - v.x) * (v.x * v.x - u.x * u.x) - 2 * r * (v.y - u.y) + v.y * v.y - u.y * u.y;
+				auto rhs = (v.x - u.x) * (w.x * w.x - v.x * v.x - 2 * r * (w.y - v.y) + w.y * w.y - v.y * v.y);
+				return lhs >= rhs;
+				};
+
+			for (rowcol_t row = 0; row < candidates.nrow(); ++row) {
+				L.push_back(std::deque<CoordXY>{});
+				std::vector<CoordXY> this_cand{}; //switching to a candidates without all the empty slots which were just used to make populating candidates easier
+				for (rowcol_t col = 0; col < in.ncol(); ++col) {
+                    auto vcandidate = candidates.atRCUnsafe(row, col);
+					if (vcandidate.has_value()) {
+						this_cand.push_back(vcandidate.value());
+					}
+				}
+				if (this_cand.size() <= 2) { //no need to remove any points, just copy this_cand to L and move on
+					for (rowcol_t i = 0; i < this_cand.size(); ++i) {
+						L[row].push_front(this_cand[i]);
+					}
+					continue;
+				}
+				L[row].push_front(this_cand[0]);
+				L[row].push_front(this_cand[1]);
+				//This weird loop is copied directly from the linked article
+				for (rowcol_t l = 2; l < this_cand.size(); ++l) {
+					CoordXY w = this_cand[l];
+					CoordXY l_k = L[row][0];
+					CoordXY l_k_1 = L[row][1];
+					while (L[row].size() >= 2) {
+						CoordXY l_k = L[row][0];
+						CoordXY l_k_1 = L[row][1];
+						if (remove(l_k_1, l_k, w, row)) {
+							L[row].pop_front();
+						}
+						else {
+							break;
+						}
+					}
+					L[row].push_front(w);
+				}
+			}
+
+			Raster<coord_t> distsq{ (Alignment)in }; //holds the squared distance to the nearest neighbor
+			for (rowcol_t row = 0; row < in.nrow(); ++row) {
+				//because the stack was filled left-to-right, it will be emptied right-to-left, so columns needs to be looped over from the right
+				if (L[row].size() == 0) { //according to this half-EDT, no canopy exists, so set the distance to nearest canopy to be the max possible. The other half-EDT might find canopy though
+					for (rowcol_t col = 0; col < in.ncol(); ++col) {
+						if (in.atRCUnsafe(row, col).has_value()) {
+							distsq.atRCUnsafe(row, col).has_value() = true;
+							distsq.atRCUnsafe(row, col).value() = std::numeric_limits<coord_t>::max();
+						}
+					}
+					continue;
+				}
+				rowcol_t col = in.ncol() - 1;
+				CoordXY currentcell = L[row][0];
+				L[row].pop_front();
+				while (L[row].size() > 0) { //once you're on the last cell, all remaining pixels will belong to that cell
+					CoordXY nextcell = L[row][0];
+					double midx = (currentcell.x + nextcell.x) / 2;
+					double boundary = 0;
+					if (currentcell.y == nextcell.y) { //points are horizontal, so the perpindicular line is vertical
+						boundary = midx;
+					}
+					else {
+						double midy = (currentcell.y + nextcell.y) / 2;
+						double slope = -1 * (currentcell.x - nextcell.x) / (currentcell.y - nextcell.y);
+						//point-slope line equation is y-midy = slope*(x-midx)
+						//plug in y = row and solve for x
+						//x = (row-midy) / slope + midx
+						boundary = (row - midy) / slope + midx;
+					}
+					while (col >= boundary && col >= 0) { // move leftwards until you cross the boundary, at which point you're in the next voronoi cell
+						if (in.atRCUnsafe(row,col).has_value()) {
+							distsq.atRCUnsafe(row,col).has_value() = true;
+							double xdist = currentcell.x - col;
+							double ydist = currentcell.y - row;
+							distsq.atRCUnsafe(row,col).value() = xdist * xdist + ydist * ydist;
+						}
+						--col;
+					}
+					currentcell = nextcell;
+					L[row].pop_front();
+				}
+				//We're now in the final voronoi cell and can just assign distance to all remaining pixels
+				while (col >= 0) {
+					if (in.atRCUnsafe(row, col).has_value()) {
+						distsq.atRCUnsafe(row, col).has_value() = true;
+						double xdist = currentcell.x - col;
+						double ydist = currentcell.y - row;
+						distsq.atRCUnsafe(row, col).value() = xdist * xdist + ydist * ydist;
+					}
+					--col;
+				}
+			}
+
+			return distsq;
+		}
+
+		template<class T>
+		inline Raster<T> flipRasterVertically(const Raster<T>& in) {
+			Raster<T> out{ (Alignment)in };
+			for (rowcol_t row = 0; row < in.nrow(); ++row) {
+				rowcol_t outRow = in.nrow() - 1 - row;
+				for (rowcol_t col = 0; col < in.ncol(); ++col) {
+					auto outv = out.atRCUnsafe(outRow, col);
+                    auto inv = in.atRCUnsafe(row, col);
+					outv.has_value() = inv.has_value();
+					if (inv.has_value()) {
+						outv.value() = inv.value();
+					}
+				}
+			}
+			return out;
+
+		}
+	}
+
+	//PRED should be a callable with the signature bool func(const T&)
+	//The output of this function is a raster with the same dimensions as the input raster
+    //The values of the output raster are the Euclidean distance from each cell to the nearest cell in the input raster for which pred returns true
+    //NoData and the edge of the raster are always considered 'false'
+	//This function will break somewhat if the input raster has different xres and yres
+	template<class T, class PRED>
+	inline Raster<coord_t> euclideanDistanceTransform(const Raster<T>& in, const PRED& predicate, std::optional<LinearUnit> desiredUnits = std::nullopt) {
+		//EDT only considering canopy to the north of the pixels
+		Raster<coord_t> upperdist = detail::halfEDT(in, predicate);
+		//EDT only considering canopy to the south of the pixels
+        Raster<coord_t> lowerdist = detail::flipRasterVertically(detail::halfEDT(detail::flipRasterVertically(in), predicate));
+
+        Raster<coord_t> out{ (Alignment)in };
+
+        //from pixel units to desired units
+		coord_t convFactor = (in.xres() + in.yres()) / 2;
+        convFactor = LinearUnitConverter(in.crs().getXYLinearUnits(), desiredUnits).convertOne(convFactor);
+
+		for (rowcol_t row = 0; row < in.nrow(); ++row) {
+			for (rowcol_t col = 0; col < in.ncol(); ++col) {
+				if (in.atRCUnsafe(row, col).has_value()) {
+                    auto upperv = upperdist.atRCUnsafe(row, col);
+                    auto lowerv = lowerdist.atRCUnsafe(row, col);
+                    auto outv = out.atRCUnsafe(row, col);
+					if (upperv.has_value() && !lowerv.has_value()) {
+						outv.has_value() = true;
+                        outv.value() = sqrt(upperv.value()) * convFactor;
+					}
+					if (lowerv.has_value() && !upperv.has_value()) {
+						outv.has_value() = true;
+						outv.value() = sqrt(lowerv.value()) * convFactor;
+                    }
+					if (upperv.has_value() && lowerv.has_value()) {
+						outv.has_value() = true;
+						outv.value() = sqrt(std::min(upperv.value(), lowerv.value())) * convFactor;
+					}
+				}
+			}
+		}
+		return out;
+	}
 }
 
 #endif
