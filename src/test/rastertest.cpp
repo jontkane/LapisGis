@@ -340,7 +340,7 @@ namespace lapis {
 			r[cell].value() = (double)cell;
 		}
 		Alignment a{ -1,-1,2,2,2,2, CoordRef("2927")};
-		Raster<double> out = r.resample(a, ExtractMethod::bilinear);
+		Raster<double> out = resampleRaster(r, a, ExtractMethod::bilinear);
 		EXPECT_EQ(a, (Alignment)out);
 
 		double temp = -1;
@@ -350,9 +350,9 @@ namespace lapis {
 			temp = out[cell].value();
 		}
 
-		out = r.transformRaster(CoordRef("2285"), ExtractMethod::bilinear);
+		out = transformRaster(r, CoordRef("2285"), ExtractMethod::bilinear);
 
-		EXPECT_EQ((Alignment)out, r.transformAlignment(CoordRef("2285")));
+		EXPECT_EQ((Alignment)out, transformAlignment(r, CoordRef("2285")));
 
 		for (cell_t cell = 0; cell < out.ncell(); ++cell) {
 			EXPECT_TRUE(out[cell].has_value());
@@ -458,5 +458,113 @@ namespace lapis {
 			y[cell].has_value() = true;
 		}
 		EXPECT_THROW(x.overlayInside(y); , AlignmentMismatchException);
+	}
+
+	TEST_F(RasterTest, trim) {
+		/*
+        * NA NA NA NA NA NA
+		* NA  7  8  9 NA NA
+		* NA 13 14 15 NA NA
+		* NA 19 20 21 NA NA
+		*/
+
+        Raster<int> r{ Alignment(Extent(0,6,0,4),4,6) };
+		for (rowcol_t row = 0; row < r.nrow(); ++row) {
+			for (rowcol_t col = 0; col < r.ncol(); ++col) {
+				if (row == 0) {
+					continue;
+				}
+				if (col == 0 || col == 4 || col == 5) {
+					continue;
+                }
+				r.atRCUnsafe(row, col).has_value() = true;
+				r.atRCUnsafe(row, col).value() = (int)r.cellFromRowCol(row, col);
+			}
+        }
+
+		Extent extentWithData{ 1,4,0,3 };
+		Raster<int> rtrim = trimRaster(r);
+        Raster<int> expectedTrim = cropRaster(r, extentWithData, SnapType::near);
+        ASSERT_EQ((Alignment)rtrim, (Alignment)expectedTrim);
+		for (cell_t cell : CellIterator(rtrim)) {
+            EXPECT_EQ(rtrim.atCellUnsafe(cell), expectedTrim.atCellUnsafe(cell));
+		}
+	}
+
+	TEST_F(RasterTest, maskByPolygon) {
+		Raster<int> r{ Alignment(Extent(0,5,0,5),5,5) };
+		for (cell_t cell = 0; cell < r.ncell(); ++cell) {
+			r[cell].has_value() = true;
+			r[cell].value() = (int)cell;
+		}
+		//right triangle. Should cleanly cover row 5 cols 0-2, row 4 cols 0-1, row 3 col 0
+		std::vector<CoordXY> outerRing = {
+			{0,0},
+			{3.1,0},
+			{0,3.1},
+			{0,0}
+		};
+
+		Polygon poly{ outerRing };
+
+		r.maskByPolygon(poly);
+		std::vector<int> expVal = {
+			-9999, -9999, -9999, -9999, -9999,
+			-9999, -9999, -9999, -9999, -9999,
+			10,-9999,-9999, -9999, -9999,
+			15,16,-9999,-9999, -9999,
+			20,21,22,-9999,-9999
+        };
+		std::vector<bool> expHasVal = {
+			false, false, false, false, false,
+			false, false, false, false, false,
+			true, false, false, false, false,
+			true, true, false, false, false,
+			true, true, true, false, false
+		};
+        verifyRaster(r, expVal, expHasVal);
+	}
+
+	TEST_F(RasterTest, maskByMultiPolygon) {
+		Raster<int> r{ Alignment(Extent(0,5,0,5),5,5) };
+		for (cell_t cell = 0; cell < r.ncell(); ++cell) {
+			r[cell].has_value() = true;
+			r[cell].value() = (int)cell;
+		}
+		std::vector<CoordXY> lowerLeftTriangle = {
+			{0,0},
+			{3.1,0},
+			{0,3.1},
+			{0,0}
+        };
+		std::vector<CoordXY> upperRightTriangle = {
+			{5,5},
+			{5,1.9},
+			{1.9,5},
+			{5,5}
+        };
+
+        Polygon poly1{ lowerLeftTriangle };
+        Polygon poly2{ upperRightTriangle };
+		MultiPolygon mp;
+        mp.addPolygon(poly1);
+        mp.addPolygon(poly2);
+
+        r.maskByMultiPolygon(mp);
+        std::vector<int> expVal = {
+			-9999,-9999,2,3,4,
+            -9999,-9999,-9999,8,9,
+            10,-9999,-9999,-9999,14,
+            15,16,-9999,-9999,-9999,
+            20,21,22,-9999,-9999
+        };
+        std::vector<bool> expHasVal = {
+			false,false,true,true,true,
+			false,false,false,true,true,
+			true,false,false,false,true,
+			true,true,false,false,false,
+			true,true,true,false,false
+        };
+        verifyRaster(r, expVal, expHasVal);
 	}
 }

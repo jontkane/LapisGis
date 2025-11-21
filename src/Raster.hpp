@@ -131,7 +131,7 @@ namespace lapis {
 			if (method == ExtractMethod::near) {
 				//we just checked the bounds a few lines up so unsafe is okay
 				return atXYUnsafe(x, y);
-			}
+                }
 			if (method == ExtractMethod::bilinear) {
 				rowcol_t colToLeft = (rowcol_t)std::floor((x - xmin() - xres() / 2) / xres());
 				rowcol_t rowAbove = (rowcol_t)std::floor((ymax() - y - yres() / 2) / yres());
@@ -175,11 +175,6 @@ namespace lapis {
 		//Writes the Raster object to the harddrive. Missing values will be replaced by naValue. It's up to the user to make sure the driver and the file extension correspond.
 		//You can specify the datatype of the file, or leave it as GDT_Unknown to choose the one that corresponds to the template of the raster object.
 		void writeRaster(const std::string& file, const std::string driver = "GTiff", const T navalue = std::numeric_limits<T>::lowest(), GDALDataType gdt = GDT_Unknown) const;
-
-		//This function produces a new raster, with alignment a, where the values are what you get by extracting at the cell centers of this
-		Raster<T> resample(const Alignment& a, ExtractMethod method) const;
-		//This is resample, but the alignment is the result of transformAlignment
-		Raster<T> transformRaster(const CoordRef& crs, ExtractMethod method) const;
 
 		//This function takes another raster whose alignment is consistent with this one (same cellsize, origin, crs)
 		//For any overlapping cells where this is nodata, and the other raster isn't, replaces the value with the new value
@@ -226,6 +221,35 @@ namespace lapis {
 		}
 		void maskByVector(const VectorDataset<MultiPolygon>& vect) {
 			_maskByVector<MultiPolygon>(vect);
+		}
+
+		void maskByPolygon(const Polygon& polygon) {
+            Extent polyExt = polygon.boundingBox();
+			for (cell_t cell : CellIterator(*this)) {
+				coord_t x = xFromCellUnsafe(cell);
+                coord_t y = yFromCellUnsafe(cell);
+                auto v = atCellUnsafe(cell);
+				if (!polyExt.contains(x, y)) {
+					v.has_value() = false;
+				}
+				else if (!polygon.containsPoint(x, y)) {
+					v.has_value() = false;
+                }
+			}
+		}
+		void maskByMultiPolygon(const MultiPolygon& multipolygon) {
+			Extent multiPolyExt = multipolygon.boundingBox();
+			for (cell_t cell : CellIterator(*this)) {
+				coord_t x = xFromCellUnsafe(cell);
+				coord_t y = yFromCellUnsafe(cell);
+				auto v = atCellUnsafe(cell);
+				if (!multiPolyExt.contains(x, y)) {
+					v.has_value() = false;
+				}
+				else if (!multipolygon.containsPoint(x, y)) {
+					v.has_value() = false;
+				}
+            }
 		}
 
 	private:
@@ -350,6 +374,58 @@ namespace lapis {
 		return out;
 	}
 
+    //equivalent to cropping by the minimum bounding rectangle of all cells that have data
+    //if none of the cells have data, returns an empty raster with 0 rows and columns
+	template<class T>
+	inline Raster<T> trimRaster(const Raster<T>& r) {
+		rowcol_t minrow = r.nrow(), maxrow = -1, mincol = r.ncol(), maxcol = -1;
+		for (rowcol_t row = 0; row < r.nrow(); ++row) {
+			for (rowcol_t col = 0; col < r.ncol(); ++col) {
+				if (r.atRCUnsafe(row, col).has_value()) {
+                    minrow = std::min(minrow, row);
+                    maxrow = std::max(maxrow, row);
+                    mincol = std::min(mincol, col);
+                    maxcol = std::max(maxcol, col);
+				}
+			}
+		}
+		if (maxrow == -1 || maxcol == -1) {
+			//no data at all
+			return Raster<T>(Alignment());
+		}
+
+		Extent e(
+			r.xFromColUnsafe(mincol),
+			r.xFromColUnsafe(maxcol),
+			r.yFromRowUnsafe(maxrow),
+			r.yFromRowUnsafe(minrow),
+			r.crs()
+        );
+        return cropRaster(r, e, SnapType::out);
+	}
+
+	//This function produces a new raster, with alignment a, where the values are what you get by extracting at the cell centers of this
+	template<class T>
+	Raster<T> resampleRaster(const Raster<T>& in, const Alignment& a, ExtractMethod method) {
+		Raster<T> out{ a };
+		const CoordTransform& transform = CoordTransformFactory::getTransform(a.crs(), in.crs());
+		for (cell_t cell = 0; cell < out.ncell(); ++cell) {
+			CoordXY xy = transform.transformSingleXY(out.xFromCellUnsafe(cell), out.yFromCellUnsafe(cell));
+			auto v = in.extract(xy.x, xy.y, method);
+			out[cell].has_value() = v.has_value();
+			out[cell].value() = v.value();
+		}
+		return out;
+	}
+	//This is resample, but the alignment is the result of transformAlignment
+	template<class T>
+	Raster<T> transformRaster(const Raster<T>& in, const CoordRef& crs, ExtractMethod method) {
+		if (crs.isConsistentHoriz(in.crs())) {
+			return in;
+		}
+		return resampleRaster(in, transformAlignment(in, crs), method);
+	}
+
 	template<class T, class S>
 	inline Raster<T> operator+(Raster<T> lhs, const S rhs) {
 		lhs += rhs;
@@ -470,6 +546,152 @@ namespace lapis {
 		return os;
 	}
 
+	template<class T>
+	inline Raster<char> operator<(const Raster<T>& lhs, const T& rhs) {
+		Raster<char> out{ (Alignment)lhs };
+		for (cell_t cell : CellIterator(lhs)) {
+			out[cell].has_value() = lhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs[cell].value() < rhs);
+			}
+		}
+		return out;
+    }
+	template<class T>
+	inline Raster<char> operator>(const Raster<T>& lhs, const T& rhs) {
+		Raster<char> out{ (Alignment)lhs };
+		for (cell_t cell : CellIterator(lhs)) {
+			out[cell].has_value() = lhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs[cell].value() > rhs);
+			}
+		}
+		return out;
+    }
+	template<class T>
+	inline Raster<char> operator>=(const Raster<T>& lhs, const T& rhs) {
+		Raster<char> out{ (Alignment)lhs };
+		for (cell_t cell : CellIterator(lhs)) {
+			out[cell].has_value() = lhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs[cell].value() >= rhs);
+			}
+		}
+		return out;
+    }
+	template<class T>
+	inline Raster<char> operator<=(const Raster<T>& lhs, const T& rhs) {
+		Raster<char> out{ (Alignment)lhs };
+		for (cell_t cell : CellIterator(lhs)) {
+			out[cell].has_value() = lhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs[cell].value() <= rhs);
+			}
+		}
+		return out;
+    }
+
+	template<class T>
+	inline Raster<char> operator<(const T& lhs, const Raster<T>& rhs) {
+		Raster<char> out{ (Alignment)rhs };
+		for (cell_t cell : CellIterator(rhs)) {
+			out[cell].has_value() = rhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs < rhs[cell].value());
+			}
+		}
+		return out;
+    }
+	template<class T>
+	inline Raster<char> operator>(const T& lhs, const Raster<T>& rhs) {
+		Raster<char> out{ (Alignment)rhs };
+		for (cell_t cell : CellIterator(rhs)) {
+			out[cell].has_value() = rhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs > rhs[cell].value());
+			}
+		}
+		return out;
+    }
+	template<class T>
+	inline Raster<char> operator>=(const T& lhs, const Raster<T>& rhs) {
+		Raster<char> out{ (Alignment)rhs };
+		for (cell_t cell : CellIterator(rhs)) {
+			out[cell].has_value() = rhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs >= rhs[cell].value());
+			}
+		}
+		return out;
+    }
+	template<class T>
+	inline Raster<char> operator<=(const T& lhs, const Raster<T>& rhs) {
+		Raster<char> out{ (Alignment)rhs };
+		for (cell_t cell : CellIterator(rhs)) {
+			out[cell].has_value() = rhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs <= rhs[cell].value());
+			}
+		}
+		return out;
+    }
+
+	template<class T>
+	inline Raster<char> operator>(const Raster<T>& lhs, const Raster<T>& rhs) {
+		if (!lhs.isSameAlignment(rhs)) {
+			throw AlignmentMismatchException("Alignment mismatch in operator>");
+		}
+		Raster<char> out{ (Alignment)lhs };
+		for (cell_t cell = 0; cell < out.ncell(); ++cell) {
+			out[cell].has_value() = lhs[cell].has_value() && rhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs[cell].value() > rhs[cell].value());
+			}
+		}
+		return out;
+    }
+	template<class T>
+	inline Raster<char> operator<(const Raster<T>& lhs, const Raster<T>& rhs) {
+		if (!lhs.isSameAlignment(rhs)) {
+			throw AlignmentMismatchException("Alignment mismatch in operator<");
+		}
+		Raster<char> out{ (Alignment)lhs };
+		for (cell_t cell = 0; cell < out.ncell(); ++cell) {
+			out[cell].has_value() = lhs[cell].has_value() && rhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs[cell].value() < rhs[cell].value());
+			}
+		}
+		return out;
+    }
+	template<class T>
+	inline Raster<char> operator>=(const Raster<T>& lhs, const Raster<T>& rhs) {
+		if (!lhs.isSameAlignment(rhs)) {
+			throw AlignmentMismatchException("Alignment mismatch in operator>=");
+		}
+		Raster<char> out{ (Alignment)lhs };
+		for (cell_t cell = 0; cell < out.ncell(); ++cell) {
+			out[cell].has_value() = lhs[cell].has_value() && rhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs[cell].value() >= rhs[cell].value());
+			}
+		}
+		return out;
+    }
+	template<class T>
+	inline Raster<char> operator<=(const Raster<T>& lhs, const Raster<T>& rhs) {
+		if (!lhs.isSameAlignment(rhs)) {
+			throw AlignmentMismatchException("Alignment mismatch in operator<=");
+		}
+		Raster<char> out{ (Alignment)lhs };
+		for (cell_t cell = 0; cell < out.ncell(); ++cell) {
+			out[cell].has_value() = lhs[cell].has_value() && rhs[cell].has_value();
+			if (out[cell].has_value()) {
+				out[cell].value() = (char)(lhs[cell].value() <= rhs[cell].value());
+			}
+		}
+		return out;
+    }
 
 	template<class T>
 	Raster<T>::Raster(const std::string& filename, const int band) {
@@ -550,26 +772,6 @@ namespace lapis {
 		auto band = wgd->GetRasterBand(1);
 		band->SetNoDataValue((double)navalue);
 		band->RasterIO(GF_Write, 0, 0, _ncol, _nrow, _data.value().data(), _ncol, _nrow, dataType, 0, 0);
-	}
-
-	template<class T>
-	Raster<T> Raster<T>::resample(const Alignment& a, ExtractMethod method) const {
-		Raster<T> out{ a };
-		const CoordTransform& transform = CoordTransformFactory::getTransform( a.crs(),crs() );
-		for (cell_t cell = 0; cell < out.ncell(); ++cell) {
-			CoordXY xy = transform.transformSingleXY(out.xFromCellUnsafe(cell), out.yFromCellUnsafe(cell));
-			auto v = this->extract(xy.x, xy.y, method);
-			out[cell].has_value() = v.has_value();
-			out[cell].value() = v.value();
-		}
-		return out;
-	}
-	template<class T>
-	Raster<T> Raster<T>::transformRaster(const CoordRef& crs, ExtractMethod method) const {
-		if (crs.isConsistentHoriz(this->crs())) {
-			return *this;
-		}
-		return resample(this->transformAlignment(crs), method);
 	}
 
 	template<class T>

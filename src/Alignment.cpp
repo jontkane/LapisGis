@@ -262,22 +262,22 @@ namespace lapis {
 		return !(lhs == rhs);
 	}
 
-	Alignment Alignment::transformAlignment(const CoordRef& crs) const {
+	Alignment transformAlignment(const Alignment& a, const CoordRef& crs) {
 
-		if (_crs.isConsistentHoriz(crs)) {
-			Alignment out = *this;
+		if (a.crs().isConsistentHoriz(crs)) {
+			Alignment out = a;
 			out.defineCRS(crs);
 			return out;
 		}
 
-        const CoordTransform& crt = CoordTransformFactory::getTransform(_crs, crs);
+        const CoordTransform& crt = CoordTransformFactory::getTransform(a.crs(), crs);
 
 		//the strategy here is to transform the four corners of the extent, taking mins/maxes, and setting xres and yres to whatever they need to be to preserve nrow/ncol
 		//if xres and yres are equal in *this, and come out to within an epsilon of equal, they'll be set to their average to preserve square pixels
-		CoordXY lowerLeft = crt.transformSingleXY(xmin(), ymin());
-		CoordXY lowerRight = crt.transformSingleXY(xmax(), ymin());
-		CoordXY upperLeft = crt.transformSingleXY(xmin(), ymax());
-		CoordXY upperRight = crt.transformSingleXY(xmax(), ymax());
+		CoordXY lowerLeft = crt.transformSingleXY(a.xmin(), a.ymin());
+		CoordXY lowerRight = crt.transformSingleXY(a.xmax(), a.ymin());
+		CoordXY upperLeft = crt.transformSingleXY(a.xmin(), a.ymax());
+		CoordXY upperRight = crt.transformSingleXY(a.xmax(), a.ymax());
 
 		coord_t newxmin = std::min(lowerLeft.x, upperLeft.x);
 		coord_t newxmax = std::max(lowerRight.x, upperRight.x);
@@ -291,14 +291,14 @@ namespace lapis {
 		if (newxmin > newxmax)
 			std::swap(newxmin, newxmax);
 			
-		coord_t newxres = ncol() ? (newxmax - newxmin) / ncol() : 1;
-		coord_t newyres = nrow() ? (newymax - newymin) / nrow() : 1;
+		coord_t newxres = a.ncol() ? (newxmax - newxmin) / a.ncol() : 1;
+		coord_t newyres = a.nrow() ? (newymax - newymin) / a.nrow() : 1;
 
-		if (xres() == yres() && std::abs(newxres - newyres) < LAPIS_EPSILON) {
+		if (a.xres() == a.yres() && std::abs(newxres - newyres) < LAPIS_EPSILON) {
 			newxres = newyres = (newxres + newyres) / 2.;
 		}
 
-		return Alignment(newxmin, newymin, nrow(), ncol(), newxres, newyres, crs);
+		return Alignment(newxmin, newymin, a.nrow(), a.ncol(), newxres, newyres, crs);
 	}
 
 	bool Alignment::consistentAlignment(const Alignment& a) const {

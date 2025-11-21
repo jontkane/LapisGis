@@ -1120,7 +1120,7 @@ namespace lapis {
 			return a;
 		}
 		return b;
-	}
+		}
 
 	template<class T>
 	inline xtl::xoptional<T> maxCombiner(xtl::xoptional<T> a, xtl::xoptional<T> b) {
@@ -1328,6 +1328,108 @@ namespace lapis {
 			}
 		}
 		return out;
+	}
+
+	//returns a raster with the same dimensions as the input
+	//each cell is labeled with a patch number
+    //connected cells with the same value in the input raster are given the same patch number in the output raster
+	template<class T>
+	inline Raster<cell_t> connectedComponents(const Raster<T>& in, bool eightDirections) {
+		//using union-find
+		Raster<cell_t> parents{ (Alignment)in };
+        Raster<cell_t> clumpSizes{ (Alignment)in };
+		auto findAncestor = [&](cell_t startCell)->cell_t {
+			std::vector<cell_t> toChange;
+			cell_t current = startCell;
+			while (true) {
+				auto parentV = parents.atCellUnsafe(current);
+				if (parentV.value() == current) {
+					break;
+				}
+				toChange.push_back(current);
+				current = parentV.value();
+			}
+			for (cell_t c : toChange) {
+				parents.atCellUnsafe(c).value() = current;
+			}
+			return current;
+			};
+		auto doUnion = [&](cell_t cellA, cell_t cellB) {
+			cell_t parentA = findAncestor(cellA);
+			cell_t parentB = findAncestor(cellB);
+			if (parentA == parentB) {
+				return;
+			}
+			//union by size
+			auto sizeA = clumpSizes.atCellUnsafe(parentA);
+			auto sizeB = clumpSizes.atCellUnsafe(parentB);
+			if (sizeA.value() >= sizeB.value()) {
+				parents.atCellUnsafe(parentB).value() = parentA;
+				sizeA.value() += sizeB.value();
+			}
+			else {
+				parents.atCellUnsafe(parentA).value() = parentB;
+				sizeB.value() += sizeA.value();
+			}
+            };
+
+		for (cell_t cell : CellIterator(in)) {
+			auto inv = in.atCellUnsafe(cell);
+			auto parentv = parents.atCellUnsafe(cell);
+			auto clumpv = clumpSizes.atCellUnsafe(cell);
+			if (inv.has_value()) {
+				parentv.has_value() = true;
+				parentv.value() = cell;
+				clumpv.has_value() = true;
+				clumpv.value() = 1;
+			}
+		}
+
+		for (rowcol_t row = 0; row < in.nrow(); ++row) {
+			for (rowcol_t col = 0; col < in.ncol(); ++col) {
+				cell_t thisCell = in.cellFromRowColUnsafe(row, col);
+				auto thisV = in.atCellUnsafe(thisCell);
+				if (!thisV.has_value()) {
+					continue;
+				}
+				//check left
+				if (col > 0) {
+					cell_t leftCell = in.cellFromRowColUnsafe(row, col - 1);
+					auto leftV = in.atCellUnsafe(leftCell);
+					if (leftV.has_value() && leftV.value() == thisV.value()) {
+						doUnion(thisCell, leftCell);
+					}
+				}
+				//check above
+				if (row > 0) {
+					cell_t aboveCell = in.cellFromRowColUnsafe(row - 1, col);
+					auto aboveV = in.atCellUnsafe(aboveCell);
+					if (aboveV.has_value() && aboveV.value() == thisV.value()) {
+						doUnion(thisCell, aboveCell);
+					}
+				}
+				if (eightDirections) {
+					//check above-left
+					if (row > 0 && col > 0) {
+						cell_t aboveLeftCell = in.cellFromRowColUnsafe(row - 1, col - 1);
+						auto aboveLeftV = in.atCellUnsafe(aboveLeftCell);
+						if (aboveLeftV.has_value() && aboveLeftV.value() == thisV.value()) {
+							doUnion(thisCell, aboveLeftCell);
+						}
+					}
+					//check above-right
+					if (row > 0 && col < in.ncol() - 1) {
+						cell_t aboveRightCell = in.cellFromRowColUnsafe(row - 1, col + 1);
+						auto aboveRightV = in.atCellUnsafe(aboveRightCell);
+						if (aboveRightV.has_value() && aboveRightV.value() == thisV.value()) {
+							doUnion(thisCell, aboveRightCell);
+						}
+					}
+				}
+			}
+        }
+
+        return parents;
 	}
 }
 

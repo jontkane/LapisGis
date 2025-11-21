@@ -267,4 +267,101 @@ namespace lapis {
 			}
         }
 	}
+
+	TEST_F(RasterAlgosTest, connectedComponentsTest) {
+		Raster<int> r{ Alignment(Extent(0,5,0,5),5,5) };
+		/*
+		*  NA  1  NA  2  2
+		*   1  1  NA  NA  2
+		*  NA NA  NA  5 NA
+		*   3  6   4  4  5
+		*   3  3  NA NA  NA
+		*/
+        r.atRCUnsafe(0, 0).has_value() = false;
+        r.atRCUnsafe(0, 1).value() = 1; r.atRCUnsafe(0, 1).has_value() = true;
+        r.atRCUnsafe(0, 2).has_value() = false;
+        r.atRCUnsafe(0, 3).value() = 2; r.atRCUnsafe(0, 3).has_value() = true;
+		r.atRCUnsafe(0, 4).value() = 2; r.atRCUnsafe(0, 4).has_value() = true;
+        r.atRCUnsafe(1, 0).value() = 1; r.atRCUnsafe(1, 0).has_value() = true;
+        r.atRCUnsafe(1, 1).value() = 1; r.atRCUnsafe(1, 1).has_value() = true;
+        r.atRCUnsafe(1, 2).has_value() = false;
+        r.atRCUnsafe(1, 3).has_value() = false;
+        r.atRCUnsafe(1, 4).value() = 2; r.atRCUnsafe(1, 4).has_value() = true;
+        r.atRCUnsafe(2, 0).has_value() = false;
+        r.atRCUnsafe(2, 1).has_value() = false;
+        r.atRCUnsafe(2, 2).has_value() = false;
+        r.atRCUnsafe(2, 3).value() = 5; r.atRCUnsafe(2, 3).has_value() = true;
+        r.atRCUnsafe(2, 4).has_value() = false;
+        r.atRCUnsafe(3, 0).value() = 3; r.atRCUnsafe(3, 0).has_value() = true;
+        r.atRCUnsafe(3, 1).value() = 6; r.atRCUnsafe(3, 1).has_value() = true;
+        r.atRCUnsafe(3, 2).value() = 4; r.atRCUnsafe(3, 2).has_value() = true;
+        r.atRCUnsafe(3, 3).value() = 4; r.atRCUnsafe(3, 3).has_value() = true;
+		r.atRCUnsafe(3, 4).value() = 5; r.atRCUnsafe(3, 4).has_value() = true;
+		r.atRCUnsafe(4, 0).value() = 3; r.atRCUnsafe(4, 0).has_value() = true;
+		r.atRCUnsafe(4, 1).value() = 3; r.atRCUnsafe(4, 1).has_value() = true;
+		r.atRCUnsafe(4, 2).has_value() = false;
+		r.atRCUnsafe(4, 3).has_value() = false;
+        r.atRCUnsafe(4, 4).has_value() = false;
+
+        Raster<cell_t> withDiagonals = connectedComponents(r, true);
+        Raster<cell_t> withoutDiagonals = connectedComponents(r, false);
+
+		ASSERT_EQ((Alignment)r, (Alignment(withDiagonals)));
+        ASSERT_EQ((Alignment)r, (Alignment(withoutDiagonals)));
+
+        //check NAs are in the right places, first
+		for (cell_t cell : CellIterator(r)) {
+            EXPECT_EQ(r.atCellUnsafe(cell).has_value(), withDiagonals.atCellUnsafe(cell).has_value()) << " at cell " << cell;
+            EXPECT_EQ(r.atCellUnsafe(cell).has_value(), withoutDiagonals.atCellUnsafe(cell).has_value()) << " at cell " << cell;
+        }
+
+		//we can't expect any specific labels, only that each component has a single label
+        cell_t label1 = withDiagonals.atRCUnsafe(0, 1).value();
+        EXPECT_EQ(label1, withDiagonals.atRCUnsafe(1, 0).value());
+        EXPECT_EQ(label1, withDiagonals.atRCUnsafe(1, 1).value());
+
+		cell_t label2 = withDiagonals.atRCUnsafe(0, 3).value();
+        EXPECT_EQ(label2, withDiagonals.atRCUnsafe(0, 4).value());
+        EXPECT_EQ(label2, withDiagonals.atRCUnsafe(1, 4).value());
+
+		cell_t label3 = withDiagonals.atRCUnsafe(3, 0).value();
+        EXPECT_EQ(label3, withDiagonals.atRCUnsafe(4, 0).value());
+        EXPECT_EQ(label3, withDiagonals.atRCUnsafe(4, 1).value());
+
+		cell_t label4 = withDiagonals.atRCUnsafe(3, 2).value();
+        EXPECT_EQ(label4, withDiagonals.atRCUnsafe(3, 3).value());
+
+        cell_t label5 = withDiagonals.atRCUnsafe(2, 3).value();
+        EXPECT_EQ(label5, withDiagonals.atRCUnsafe(3, 4).value());
+
+		cell_t label6 = withDiagonals.atRCUnsafe(3, 1).value();
+
+		std::unordered_set<cell_t > labelsWithDiagonals{ label1, label2, label3, label4, label5, label6 };
+        EXPECT_EQ(labelsWithDiagonals.size(), 6);
+
+        //without diagonals, some the 5s should be split into two labels
+        label1 = withoutDiagonals.atRCUnsafe(0, 1).value();
+        EXPECT_EQ(label1, withoutDiagonals.atRCUnsafe(1, 0).value());
+        EXPECT_EQ(label1, withoutDiagonals.atRCUnsafe(1, 1).value());
+
+		label2 = withoutDiagonals.atRCUnsafe(0, 3).value();
+		EXPECT_EQ(label2, withoutDiagonals.atRCUnsafe(0, 4).value());
+		EXPECT_EQ(label2, withoutDiagonals.atRCUnsafe(1, 4).value());
+
+		label3 = withoutDiagonals.atRCUnsafe(3, 0).value();
+		EXPECT_EQ(label3, withoutDiagonals.atRCUnsafe(4, 0).value());
+		EXPECT_EQ(label3, withoutDiagonals.atRCUnsafe(4, 1).value());
+
+		label4 = withoutDiagonals.atRCUnsafe(3, 2).value();
+		EXPECT_EQ(label4, withoutDiagonals.atRCUnsafe(3, 3).value());
+
+		label5 = withoutDiagonals.atRCUnsafe(2, 3).value();
+        cell_t label5b = withoutDiagonals.atRCUnsafe(3, 4).value();
+
+		label6 = withoutDiagonals.atRCUnsafe(3, 1).value();
+
+		std::unordered_set<cell_t > labelsWithoutDiagonals{ label1, label2, label3, label4, label5, label5b, label6 };
+        EXPECT_EQ(labelsWithoutDiagonals.size(), 7);
+
+	}
 }

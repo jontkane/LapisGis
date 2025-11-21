@@ -25,9 +25,6 @@ namespace lapis {
 			RowColExtent() = default;
 		};
 
-
-
-
 		//default construct. Extent is a single point at the origin; xres and yres are 1
 		Alignment() : Extent(), _xres(1), _yres(1), _nrow(0), _ncol(0) {}
 		//Constructor from lower left corner and cell information
@@ -201,9 +198,6 @@ namespace lapis {
 		//Returns the minimum and maximum row and column numbers that fall within the given extent, after aligning with the given snaptype
 		RowColExtent rowColExtent(const Extent& e, SnapType snap) const;
 
-		//Returns an alignment in the given CRS which is as close as reasonable possible to this
-		Alignment transformAlignment(const CoordRef& crs) const;
-
 	protected:
 		coord_t _xres, _yres;
 		rowcol_t _nrow, _ncol;
@@ -325,6 +319,9 @@ namespace lapis {
 	Alignment cropAlignment(const Alignment& a, const Extent& e, SnapType snap);
 
 	Alignment extendAlignment(const Alignment& a, const Extent& e, SnapType snap);
+
+	//Returns an alignment in the given CRS which is as close as reasonably possible to this
+	Alignment transformAlignment(const Alignment& a, const CoordRef& crs);
 
 	bool operator==(const Alignment& lhs, const Alignment& rhs);
 	bool operator!=(const Alignment& lhs, const Alignment& rhs);
