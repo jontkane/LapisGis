@@ -18,6 +18,7 @@
 #include<cassert>
 #include<filesystem>
 #include<shared_mutex>
+#include<queue>
 
 //lazperf
 #pragma warning (push)

@@ -1114,6 +1114,81 @@ namespace lapis {
 		return mosaicUnsafe(rasters, combiner);
 	}
 
+    //as mosaicinside below, but no safety checks are performed to ensure consistent alignment
+    template<class T>
+	inline Raster<T> mosaicInsideUnsafe(const std::vector<Raster<T>*>& rasters) {
+		if (rasters.size() == 0) {
+			throw std::invalid_argument("No rasters provided to mosaicUnsafe function");
+		}
+		if (!rasters[0]) {
+			throw std::invalid_argument("Null raster provided to mosaicUnsafe function");
+		}
+		Alignment outAlign = *rasters[0];
+		for (size_t i = 1; i < rasters.size(); ++i) {
+			if (!rasters[i]) {
+				continue;
+			}
+			outAlign = extendAlignment(outAlign, *rasters[i], SnapType::near);
+		}
+		Raster<T> outRaster{ outAlign };
+		Raster<int> bestDist{ outAlign };
+		for (cell_t cell : CellIterator(bestDist)) {
+            auto distv = bestDist.atCellUnsafe(cell);
+			distv.has_value() = true;
+            distv.value() = std::numeric_limits<int>::lowest();
+		}
+
+		for (Raster<T>* r : rasters) {
+			if (!r) continue;
+			for (cell_t cell : CellIterator(outRaster, *r, SnapType::near)) {
+				coord_t x = outRaster.xFromCellUnsafe(cell);
+				coord_t y = outRaster.yFromCellUnsafe(cell);
+				cell_t rCell = r->cellFromXYUnsafe(x, y);
+				auto v = r->atCellUnsafe(rCell);
+				if (!v.has_value()) continue;
+
+				rowcol_t rRow = r->rowFromCellUnsafe(rCell);
+				rowcol_t rCol = r->colFromCellUnsafe(rCell);
+				int distToEdge = std::min({ rRow, r->nrow() - 1 - rRow, rCol, r->ncol() - 1 - rCol });
+
+				auto bestDistV = bestDist.atCellUnsafe(cell);
+				auto outV = outRaster.atCellUnsafe(cell);
+				if (distToEdge > bestDistV.value() || !outV.has_value()) {
+					bestDistV.value() = distToEdge;
+					outV.has_value() = true;
+					outV.value() = v.value();
+				}
+			}
+		}
+		return outRaster;
+	}
+
+	//mosaics the input rasters
+	//as mosaic, above, but in vells of overlap, the value is pulled from the raster for which the cell is furthest from the edge of that raster
+	template<class T>
+	inline Raster<T> mosaicInside(const std::vector<Raster<T>*>& rasters) {
+		if (rasters.size() == 0) {
+			throw std::invalid_argument("No rasters provided to mosaic function");
+		}
+		coord_t xres = rasters[0]->xres();
+		coord_t yres = rasters[0]->yres();
+		coord_t xorigin = rasters[0]->xOrigin();
+		coord_t yorigin = rasters[0]->yOrigin();
+		CoordRef crs = rasters[0]->crs();
+		for (size_t i = 1; i < rasters.size(); ++i) {
+			bool match = true;
+			match = match && (std::abs(rasters[i]->xres() - xres) < LAPIS_EPSILON);
+			match = match && (std::abs(rasters[i]->yres() - yres) < LAPIS_EPSILON);
+			match = match && (std::abs(rasters[i]->xOrigin() - xorigin) < LAPIS_EPSILON);
+			match = match && (std::abs(rasters[i]->yOrigin() - yorigin) < LAPIS_EPSILON);
+			match = match && crs.isConsistent(rasters[i]->crs());
+			if (!match) {
+				throw AlignmentMismatchException("Alignment mismatch in mosaic function");
+			}
+		}
+		return mosaicInsideUnsafe(rasters);
+	}
+
     template<class T>
 	inline xtl::xoptional<T> firstCombiner(xtl::xoptional<T> a, xtl::xoptional<T> b) {
 		if (a.has_value()) {
@@ -1430,6 +1505,72 @@ namespace lapis {
         }
 
         return parents;
+	}
+
+	//replaces all non-NA cells in r which are NA in mask, with whatever value is closest in r
+	//lookdist is the maximum distance to look for a value, in cells. The window searched is square, not circular
+    //if no value is found within lookdist, the cell remains NA
+	template<class S, class T>
+	inline Raster<T> nibble(const Raster<T>& r, const Raster<S>& mask) {
+		if (!r.isSameAlignment(mask)) {
+			throw AlignmentMismatchException("Alignment mismatch in nibble function");
+		}
+
+		Raster<T> out{ (Alignment)r };
+		std::queue<std::tuple<rowcol_t, rowcol_t>> q;
+
+		for (rowcol_t row = 0; row < r.nrow(); ++row) {
+			for (rowcol_t col = 0; col < r.ncol(); ++col) {
+				auto rv = r.atRCUnsafe(row, col);
+				auto maskv = mask.atRCUnsafe(row, col);
+				auto outv = out.atRCUnsafe(row, col);
+
+				if (!rv.has_value()) {
+					// Supposed to be NA
+					outv.has_value() = false;
+				}
+				else if (maskv.has_value()) {
+					// Don't need correction
+					outv.has_value() = true;
+					outv.value() = rv.value();
+					q.emplace(row, col); // Seed BFS from these cells
+				}
+				else {
+					// Excised, needs refill
+					outv.has_value() = false;
+				}
+			}
+		}
+
+        Raster<char> visited{ (Alignment)r };
+		while (!q.empty()) {
+			auto [row, col] = q.front();
+			q.pop();
+			auto outv = out.atRCUnsafe(row, col);
+
+			constexpr size_t budgedirections = 4;
+			const static rowcol_t rowBudge[budgedirections] = { -1, 1, 0, 0 };
+			const static rowcol_t colBudge[budgedirections] = { 0, 0, -1, 1 };
+			for (int d = 0; d < budgedirections; ++d) {
+				rowcol_t thisrow = row + rowBudge[d];
+				rowcol_t thiscol = col + colBudge[d];
+				if (thisrow < 0 || thisrow >= r.nrow() || thiscol < 0 || thiscol >= r.ncol()) continue;
+				if (visited.atRCUnsafe(thisrow,thiscol).value()) continue;
+				auto noutv = out.atRCUnsafe(thisrow, thiscol);
+				auto nrv = r.atRCUnsafe(thisrow, thiscol);
+				auto nmaskv = mask.atRCUnsafe(thisrow, thiscol);
+
+				// Only fill excised cells (NA in mask, non-NA in r)
+				if (nrv.has_value() && !nmaskv.has_value() && !noutv.has_value()) {
+					noutv.has_value() = true;
+					noutv.value() = outv.value();
+					visited.atRCUnsafe(thisrow, thiscol).value() = true;
+					q.emplace(thisrow, thiscol);
+				}
+			}
+		}
+
+		return out;
 	}
 }
 

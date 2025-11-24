@@ -268,7 +268,7 @@ namespace lapis {
         }
 	}
 
-	TEST_F(RasterAlgosTest, connectedComponentsTest) {
+	TEST_F(RasterAlgosTest, ConnectedComponentsTest) {
 		Raster<int> r{ Alignment(Extent(0,5,0,5),5,5) };
 		/*
 		*  NA  1  NA  2  2
@@ -363,5 +363,176 @@ namespace lapis {
 		std::unordered_set<cell_t > labelsWithoutDiagonals{ label1, label2, label3, label4, label5, label5b, label6 };
         EXPECT_EQ(labelsWithoutDiagonals.size(), 7);
 
+	}
+
+	TEST_F(RasterAlgosTest, Nibble) {
+		/* inraster. NA cells should remain NA in the output; other cells should either remain or change based on the mask raster
+        * NA  1  2  3  4
+		* NA  1  2  3  4
+		* NA  1  2  3  4
+		* NA  1  2  3  4
+		* NA  1  2  3  4
+		*/
+
+        /* maskraster. NA = nibble (fill from neighbors); 1 = keep original value
+		* NA NA 1  1  1
+        * NA NA 1  1  1
+		* 1  1  NA NA NA
+        * 1  1  NA NA NA
+		* 1  1  NA NA NA
+		*/
+		Raster<int> inraster{ Alignment(Extent(0,5,0,5),5,5) };
+		Raster<int> maskraster{ Alignment(Extent(0,5,0,5),5,5) };
+		for (rowcol_t row = 0; row < inraster.nrow(); ++row) {
+			for (rowcol_t col = 0; col < inraster.ncol(); ++col) {
+                auto inv = inraster.atRCUnsafe(row, col);
+                auto maskv = maskraster.atRCUnsafe(row, col);
+				if (col == 0) {
+					inv.has_value() = false;
+				}
+				else {
+					inv.has_value() = true;
+					inv.value() = col;
+				}
+
+				if ( (col <= 1) && (row <= 1) ) {
+					//upper left square of NAs
+					maskv.has_value() = false;
+				}
+				else {
+					if (row <= 1) {
+						//upper right square of values
+                        maskv.has_value() = true;
+						maskv.value() = row + col; //semi-random value because it shouldn't matter
+					}
+					else {
+                        //lower left square of values
+						if (col <= 1) {
+							maskv.has_value() = true;
+							maskv.value() = row + col; //semi-random value because it shouldn't matter
+						}
+						else {
+							//lower right square of NAs
+							maskv.has_value() = false;
+                        }
+					}
+                }
+			}
+		}
+
+        Raster<int> outraster = nibble(inraster, maskraster);
+
+		for (rowcol_t row = 0; row < inraster.nrow(); ++row) {
+			for (rowcol_t col = 0; col < inraster.ncol(); ++col) {
+				//NAs in input should stay NA
+				if (!inraster.atRCUnsafe(row, col).has_value()) {
+					EXPECT_FALSE(outraster.atRCUnsafe(row, col).has_value()) << " at row " << row << ", col " << col;
+					continue;
+				}
+				//non-NAs in input
+				if (maskraster.atRCUnsafe(row, col).has_value()) {
+					//mask says keep original
+					EXPECT_TRUE(outraster.atRCUnsafe(row, col).has_value()) << " at row " << row << ", col " << col;
+					EXPECT_EQ(outraster.atRCUnsafe(row, col).value(), inraster.atRCUnsafe(row, col).value()) << " at row " << row << ", col " << col;
+					continue;
+				}
+				//mask says nibble (fill from neighbors)
+				EXPECT_TRUE(outraster.atRCUnsafe(row, col).has_value()) << " at row " << row << ", col " << col;
+
+				//the algorithm used doesn't guarantee which neighbor it fills from
+				if (col <= 1) {
+					//upper-left corner, valid fills are 1 or 2
+                    int val = outraster.atRCUnsafe(row, col).value();
+                    EXPECT_TRUE((val == 1) || (val == 2)) << " at row " << row << ", col " << col;
+				}
+				else {
+					//lower-right corner, 1-4 are all valid fills
+					int val = outraster.atRCUnsafe(row, col).value();
+                    EXPECT_TRUE((val >= 1) && (val <= 4)) << " at row " << row << ", col " << col;
+				}
+			}
+		}
+		
+
+	}
+
+	TEST_F(RasterAlgosTest, MosaicInside) {
+        //two 3x3 rasters, with two columns of overlap. Values are numbered based on the column number they expect to end up in in the mosaic. Second raster is that value +10 so I can track which raster the value came from.
+		/*
+		* 0 1 2
+		* 0 1 2
+		* 0 1 2
+		* 
+		* 11 12 13
+		* 11 12 13
+		* 11 12 13
+		*/
+		//top row of the second raster is NA, to make sure that's handled properly
+
+
+        Raster<int> r1{ Alignment(Extent(0,3,0,3),3,3) };
+        Raster<int> r2{ Alignment(Extent(1,4,0,3),3,3) };
+		for (rowcol_t row = 0; row < r1.nrow(); ++row) {
+			for (rowcol_t col = 0; col < r1.ncol(); ++col) {
+				r1.atRCUnsafe(row, col).has_value() = true;
+				r1.atRCUnsafe(row, col).value() = (int)col;
+			}
+        }
+		for (rowcol_t row = 0; row < r1.nrow(); ++row) {
+			for (rowcol_t col = 0 ; col < r1.ncol(); ++col) {
+				if (row == 0) {
+					r2.atRCUnsafe(row, col).has_value() = false;
+				}
+				else {
+					r2.atRCUnsafe(row, col).has_value() = true;
+					r2.atRCUnsafe(row, col).value() = 11 + (int)col;
+				}
+            }
+		}
+
+		/* expected output:
+		* 0 1 2 NA
+		* 0 1 12 13
+		* 0 1/11 2/12 13
+		*/
+
+		std::vector<Raster<int>*> rasters{ &r1, &r2 };
+		auto out = mosaicInside(rasters);
+		Alignment expectedAlign = extendAlignment(r1, r2, SnapType::near);
+		EXPECT_TRUE(out.isSameAlignment(expectedAlign));
+		EXPECT_EQ(out.ncell(), expectedAlign.ncell());
+		for (rowcol_t row = 0; row < out.nrow(); ++row) {
+			for (rowcol_t col = 0; col < out.ncol(); ++col) {
+                auto outv = out.atRCUnsafe(row, col);
+				if ( (row == 0) && (col == 3) ) {
+					EXPECT_FALSE(outv.has_value()) << " at row " << row << ", col " << col;
+				}
+				if ((row == 0) && (col == 2)) {
+                    EXPECT_TRUE(outv.has_value()) << " at row " << row << ", col " << col;
+                    EXPECT_EQ(outv.value(), 2) << " at row " << row << ", col " << col;
+				}
+				if (col <= 1) {
+					EXPECT_TRUE(outv.has_value()) << " at row " << row << ", col " << col;
+					EXPECT_EQ(outv.value(), (int)col) << " at row " << row << ", col " << col;
+				}
+				if (col >= 2 && row == 1) {
+					EXPECT_TRUE(outv.has_value()) << " at row " << row << ", col " << col;
+                    EXPECT_EQ(outv.value(), 10 + (int)col) << " at row " << row << ", col " << col;
+				}
+				if (col == 0 && row == 3) {
+					EXPECT_TRUE(outv.has_value()) << " at row " << row << ", col " << col;
+					EXPECT_EQ(outv.value(), 0) << " at row " << row << ", col " << col;
+				}
+				if (col == 3 && row == 3) {
+					EXPECT_TRUE(outv.has_value()) << " at row " << row << ", col " << col;
+                    EXPECT_EQ(outv.value(), 13) << " at row " << row << ", col " << col;
+				}
+				if (col >= 1 && col <= 2 && row == 3) {
+					EXPECT_TRUE(outv.has_value()) << " at row " << row << ", col " << col;
+					int val = outv.value();
+					EXPECT_TRUE((val == col) || (val == 10 + col)) << " at row " << row << ", col " << col;
+				}
+			}
+		}
 	}
 }
