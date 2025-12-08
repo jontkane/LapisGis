@@ -151,18 +151,21 @@ namespace lapis {
 					const xtl::xoptional<T> lowvalue, const xtl::xoptional<T> highvalue)
 					->xtl::xoptional<T> {
 
-					xtl::xoptional interp = xtl::missing<T>();
+					coord_t interp;
 					if (lowvalue.has_value() && highvalue.has_value()) {
-						interp = (highcoord - thiscoord) / (highcoord - lowcoord) * lowvalue + (thiscoord - lowcoord) / (highcoord - lowcoord) * highvalue;
+						interp = (highcoord - thiscoord) / (highcoord - lowcoord) * lowvalue.value() + (thiscoord - lowcoord) / (highcoord - lowcoord) * highvalue.value();
 					}
 					else if (lowvalue.has_value() && !highvalue.has_value()) {
-						interp = lowvalue;
+						interp = lowvalue.value();
 					}
 					else if (!lowvalue.has_value() && highvalue.has_value()) {
-						interp = highvalue;
+						interp = highvalue.value();
 					}
-					return interp;
-					};
+					else {
+						return xtl::missing<T>();
+					}
+					return xtl::xoptional<T>(static_cast<T>(interp));
+				};
 
 				//linear interp between 
 				xtl::xoptional<T> directBelow = linearInterp(xToLeft, xToRight, x, ll, lr);
