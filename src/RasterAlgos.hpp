@@ -1572,6 +1572,60 @@ namespace lapis {
 
 		return out;
 	}
+
+	template<class T, class Z>
+	inline std::unordered_map<Z, T> zonalSum(const Raster<T>& values, const Raster<Z>& zones) {
+		if (!values.isSameAlignment(zones)) {
+			throw AlignmentMismatchException("Alignment mismatch in zonalSum function");
+		}
+		std::unordered_map<Z, T> outSums{};
+		for (cell_t cell : CellIterator(values)) {
+			auto valueV = values.atCellUnsafe(cell);
+			auto zoneV = zones.atCellUnsafe(cell);
+			if (valueV.has_value() && zoneV.has_value()) {
+				outSums[zoneV.value()] += valueV.value();
+			}
+		}
+		return outSums;
+	}
+
+	template<class T, class Z>
+	inline std::unordered_map<Z, size_t> zonalCount(const Raster<T>& values, const Raster<Z>& zones) {
+		if (!values.isSameAlignment(zones)) {
+			throw AlignmentMismatchException("Alignment mismatch in zonalCount function");
+		}
+		std::unordered_map<Z, size_t> outCounts{};
+		for (cell_t cell : CellIterator(values)) {
+			auto valueV = values.atCellUnsafe(cell);
+			auto zoneV = zones.atCellUnsafe(cell);
+			if (valueV.has_value() && zoneV.has_value()) {
+				outCounts[zoneV.value()] += 1;
+			}
+		}
+		return outCounts;
+	}
+
+	template<class T, class Z>
+	inline std::unordered_map<Z, T> zonalMean(const Raster<T>& values, const Raster<Z>& zones) {
+		if (!values.isSameAlignment(zones)) {
+			throw AlignmentMismatchException("Alignment mismatch in zonalMean function");
+		}
+		std::unordered_map<Z, T> outSums{};
+		std::unordered_map<Z, size_t> outCounts{};
+		for (cell_t cell : CellIterator(values)) {
+			auto valueV = values.atCellUnsafe(cell);
+			auto zoneV = zones.atCellUnsafe(cell);
+			if (valueV.has_value() && zoneV.has_value()) {
+				outSums[zoneV.value()] += valueV.value();
+				outCounts[zoneV.value()] += 1;
+			}
+		}
+		std::unordered_map<Z, T> outMeans{};
+		for (const auto& [zone, sum] : outSums) {
+			outMeans[zone] = sum / static_cast<T>(outCounts[zone]);
+		}
+		return outMeans;
+    }
 }
 
 #endif

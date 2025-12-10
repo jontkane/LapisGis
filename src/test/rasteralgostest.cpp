@@ -535,4 +535,55 @@ namespace lapis {
 			}
 		}
 	}
+
+	TEST_F(RasterAlgosTest, Zonal) {
+		//create a raster with values 0-8
+		Raster<int> valr{ Alignment(Extent(0,3,0,3),3,3) };
+		for (cell_t cell = 0; cell < valr.ncell(); ++cell) {
+			valr[cell].has_value() = true;
+			valr[cell].value() = (int)cell;
+		}
+		//create a zone raster with zones:
+		/*
+		* 1 1 2
+		* 1 2 2
+		* 3 3 3
+		*/
+		Raster<int> zoner{ Alignment(Extent(0,3,0,3),3,3) };
+		zoner.atRCUnsafe(0, 0).has_value() = true; zoner.atRCUnsafe(0, 0).value() = 1;
+		zoner.atRCUnsafe(0, 1).has_value() = true; zoner.atRCUnsafe(0, 1).value() = 1;
+		zoner.atRCUnsafe(0, 2).has_value() = true; zoner.atRCUnsafe(0, 2).value() = 2;
+		zoner.atRCUnsafe(1, 0).has_value() = true; zoner.atRCUnsafe(1, 0).value() = 1;
+		zoner.atRCUnsafe(1, 1).has_value() = true; zoner.atRCUnsafe(1, 1).value() = 2;
+		zoner.atRCUnsafe(1, 2).has_value() = true; zoner.atRCUnsafe(1, 2).value() = 2;
+		zoner.atRCUnsafe(2, 0).has_value() = true; zoner.atRCUnsafe(2, 0).value() = 3;
+		zoner.atRCUnsafe(2, 1).has_value() = true; zoner.atRCUnsafe(2, 1).value() = 3;
+		zoner.atRCUnsafe(2, 2).has_value() = true; zoner.atRCUnsafe(2, 2).value() = 3;
+		//compute zonal mean
+        std::unordered_map<int, int> sum = zonalSum(valr, zoner);
+        std::unordered_map<int, size_t> count = zonalCount(valr, zoner);
+        std::unordered_map<int, int> mean = zonalMean(valr, zoner);
+
+        //check results
+		ASSERT_TRUE(sum.find(1) != sum.end());
+        EXPECT_EQ(sum[1], 0 + 1 + 3); //cells 0,1,3
+        ASSERT_TRUE(sum.find(2) != sum.end());
+        EXPECT_EQ(sum[2], 2 + 4 + 5); //cells 2,4,5
+        ASSERT_TRUE(sum.find(3) != sum.end());
+        EXPECT_EQ(sum[3], 6 + 7 + 8); //cells 6,7,8
+
+        ASSERT_TRUE(count.find(1) != count.end());
+        EXPECT_EQ(count[1], 3);
+        ASSERT_TRUE(count.find(2) != count.end());
+        EXPECT_EQ(count[2], 3);
+        ASSERT_TRUE(count.find(3) != count.end());
+        EXPECT_EQ(count[3], 3);
+
+        ASSERT_TRUE(mean.find(1) != mean.end());
+        EXPECT_EQ(mean[1], (0 + 1 + 3) / 3);
+        ASSERT_TRUE(mean.find(2) != mean.end());
+        EXPECT_EQ(mean[2], (2 + 4 + 5) / 3);
+        ASSERT_TRUE(mean.find(3) != mean.end());
+        EXPECT_EQ(mean[3], (6 + 7 + 8) / 3);
+	}
 }
