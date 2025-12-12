@@ -156,10 +156,10 @@ namespace lapis {
 						interp = (highcoord - thiscoord) / (highcoord - lowcoord) * lowvalue.value() + (thiscoord - lowcoord) / (highcoord - lowcoord) * highvalue.value();
 					}
 					else if (lowvalue.has_value() && !highvalue.has_value()) {
-						interp = lowvalue.value();
+						interp = (coord_t)lowvalue.value();
 					}
 					else if (!lowvalue.has_value() && highvalue.has_value()) {
-						interp = highvalue.value();
+						interp = (coord_t)highvalue.value();
 					}
 					else {
 						return xtl::missing<T>();
@@ -713,7 +713,7 @@ namespace lapis {
 		rBand->RasterIO(GF_Read, 0, 0, _ncol, _nrow, _data.value().data(), _ncol, _nrow, GDT(), 0, 0);
 
 		for (cell_t cell = 0; cell < ncell(); ++cell) {
-			double asDouble = _data.value()[cell];
+			double asDouble = (double)_data.value()[cell];
 			if (asDouble != naValue && !(naValue < -2000000 && asDouble < -2000000) && !std::isnan(asDouble)) {
 				_data.has_value()[cell] = true;
 			}
