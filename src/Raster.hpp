@@ -701,7 +701,7 @@ namespace lapis {
 
 		UniqueGdalDataset wgd = rasterGDALWrapper(filename);
 		if (!wgd) {
-			throw InvalidRasterFileException("Unable to opent " + filename + " as a raster");
+			throw InvalidRasterFileException("Unable to open " + filename + " as a raster");
 		}
 		alignmentInitFromGDALRaster(wgd, getGeoTrans(wgd, filename));
 		checkValidAlignment();

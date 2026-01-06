@@ -933,6 +933,7 @@ namespace lapis {
 				newExtent = extendExtent(newExtent, geometry.boundingBox());
 			}
 		}
+		_extent = newExtent;
 	}
 
 	template<class GEOM>
