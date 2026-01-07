@@ -905,7 +905,7 @@ namespace lapis {
 						addArcToPoly(thisArms.verticalArcOuter, *thisArms.leftPoly);
 					}
 					if (thisArms.abovePoly) {
-						addArcToPoly(thisArms.horizontalArcOuter, *thisArms.leftPoly);
+						addArcToPoly(thisArms.horizontalArcOuter, *thisArms.abovePoly);
 					}
 					};
 				auto continueInnerVert = [&]() {
