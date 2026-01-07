@@ -18,6 +18,16 @@ namespace lapis {
 		String
 	};
 
+	namespace {
+		inline std::string getFieldName(OGRFieldDefn* field) {
+			const char* altName = field->GetAlternativeNameRef();
+			if (altName && altName[0] != '\0') {
+				return std::string(altName);
+			}
+			return std::string(field->GetNameRef());
+		}
+	}
+
 	class AttributeTable;
     template<class attribute_pointer>
     class AttributeRow;
@@ -470,13 +480,13 @@ namespace lapis {
 					switch (field->GetType()) {
 					case OFTInteger:
 					case OFTInteger64:
-						addIntegerField(field->GetNameRef());
+						addIntegerField(getFieldName(field));
 						break;
 					case OFTReal:
-						addRealField(field->GetNameRef());
+						addRealField(getFieldName(field));
 						break;
 					case OFTString:
-						addStringField(field->GetNameRef(), field->GetWidth());
+						addStringField(getFieldName(field), field->GetWidth());
 						break;
 					default:
 						throw std::runtime_error("unimplemented field type when reading shapefile");
@@ -492,13 +502,13 @@ namespace lapis {
 				switch (field->GetType()) {
 				case OFTInteger:
 				case OFTInteger64:
-					setIntegerField(_geometries.size() - 1, field->GetNameRef(), feature->GetFieldAsInteger64(field->GetNameRef()));
+					setIntegerField(_geometries.size() - 1, getFieldName(field), feature->GetFieldAsInteger64(field->GetNameRef()));
 					break;
 				case OFTReal:
-					setRealField(_geometries.size() - 1, field->GetNameRef(), feature->GetFieldAsDouble(field->GetNameRef()));
+					setRealField(_geometries.size() - 1, getFieldName(field), feature->GetFieldAsDouble(field->GetNameRef()));
 					break;
 				case OFTString:
-					setStringField(_geometries.size() - 1, field->GetNameRef(), feature->GetFieldAsString(field->GetNameRef()));
+					setStringField(_geometries.size() - 1, getFieldName(field), feature->GetFieldAsString(field->GetNameRef()));
 					break;
 				default:
 					throw WrongFieldTypeException("Unimplemented field type when reading shapefile");
@@ -548,7 +558,7 @@ namespace lapis {
                 commonCrs = CoordRef(layer->GetSpatialRef());
 				for (int i = 0; i < layer->GetLayerDefn()->GetFieldCount(); ++i) {
 					OGRFieldDefn* field = layer->GetLayerDefn()->GetFieldDefn(i);
-					fieldNames.push_back(field->GetNameRef());
+					fieldNames.push_back(getFieldName(field));
 					switch (field->GetType()) {
 					case OFTInteger:
 					case OFTInteger64:
@@ -581,7 +591,7 @@ namespace lapis {
 			}
 			for (int i = 0; i < layer->GetLayerDefn()->GetFieldCount(); ++i) {
 				OGRFieldDefn* field = layer->GetLayerDefn()->GetFieldDefn(i);
-				if (field->GetNameRef() != fieldNames[i]) {
+				if (getFieldName(field) != fieldNames[i]) {
 					throw std::runtime_error("Attribute table of " + filename.string() + " does not match other files in the set");
 				}
 				FieldType expectedType = fieldTypes[i];
@@ -651,6 +661,7 @@ namespace lapis {
 
 		for (const auto& fieldName : getAllFieldNames()) {
 			OGRFieldDefn newField = OGRFieldDefn(fieldName.c_str(), OFTString);
+			newField.SetAlternativeName(fieldName.c_str());
 			switch (getFieldType(fieldName)) {
 			case FieldType::String:
 				newField.SetType(OFTString);
@@ -666,18 +677,22 @@ namespace lapis {
 				break;
 			}
 		}
+
+        const std::vector<std::string>& fieldNames = getAllFieldNames();
+
 		for (auto&& feature : *this) {
 			UniqueOGRFeature gdalFeature = createFeatureWrapper(layer);
-			for (const auto& fieldName : getAllFieldNames()) {
+			for (size_t i = 0; i < fieldNames.size(); ++i) {
+                const std::string& fieldName = fieldNames[i];
 				switch (getFieldType(fieldName)) {
 				case FieldType::String:
-					gdalFeature->SetField(fieldName.c_str(), feature.getStringField(fieldName).c_str());
+					gdalFeature->SetField(static_cast<int>(i), feature.getStringField(fieldName).c_str());
 					break;
 				case FieldType::Real:
-					gdalFeature->SetField(fieldName.c_str(), feature.getRealField(fieldName));
+					gdalFeature->SetField(static_cast<int>(i), feature.getRealField(fieldName));
 					break;
 				case FieldType::Integer:
-					gdalFeature->SetField(fieldName.c_str(), feature.getIntegerField(fieldName));
+					gdalFeature->SetField(static_cast<int>(i), feature.getIntegerField(fieldName));
 					break;
 				}
 			}

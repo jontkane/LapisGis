@@ -24,13 +24,13 @@ namespace lapis {
                     switch (field->GetType()) {
                     case OFTInteger:
                     case OFTInteger64:
-                        addIntegerField(field->GetNameRef());
+                        addIntegerField(getFieldName(field));
                         break;
                     case OFTReal:
-                        addRealField(field->GetNameRef());
+                        addRealField(getFieldName(field));
                         break;
                     case OFTString:
-                        addStringField(field->GetNameRef(), field->GetWidth());
+                        addStringField(getFieldName(field), field->GetWidth());
                         break;
                     default:
                         throw std::runtime_error("unimplemented field type when reading shapefile");
@@ -44,13 +44,13 @@ namespace lapis {
                 switch (field->GetType()) {
                 case OFTInteger:
                 case OFTInteger64:
-                    setIntegerField(thisFeatureIndex, field->GetNameRef(), feature->GetFieldAsInteger64(field->GetNameRef()));
+                    setIntegerField(thisFeatureIndex, getFieldName(field), feature->GetFieldAsInteger64(field->GetNameRef()));
                     break;
                 case OFTReal:
-                    setRealField(thisFeatureIndex, field->GetNameRef(), feature->GetFieldAsDouble(field->GetNameRef()));
+                    setRealField(thisFeatureIndex, getFieldName(field), feature->GetFieldAsDouble(field->GetNameRef()));
                     break;
                 case OFTString:
-                    setStringField(thisFeatureIndex, field->GetNameRef(), feature->GetFieldAsString(field->GetNameRef()));
+                    setStringField(thisFeatureIndex, getFieldName(field), feature->GetFieldAsString(field->GetNameRef()));
                     break;
                 default:
                     throw WrongFieldTypeException("Unimplemented field type when reading shapefile");
