@@ -35,7 +35,7 @@ namespace lapis {
 		bool isEmpty() const;
 
 		//returns whether a transformation is needed to go from one crs to the other--a bit looser than true equality
-		bool isSame(const CoordRef& other)const;
+		bool isSame(const CoordRef& other) const;
 
 		//returns true if either crs is empty, or if their horizontal components are the same
 		bool isConsistentHoriz(const CoordRef& other) const;

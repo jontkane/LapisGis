@@ -200,8 +200,9 @@ namespace lapis {
 
 		const GEOM& getGeometry(size_t index) const;
 		void replaceGeometry(size_t index, const GEOM& geom);
-		void replaceGeometryPreciseExtent(size_t index, const GEOM& geom);
 		void addGeometry(const GEOM& g);
+        //'unsafe' in that it doesn't check for CRS match between the geometry and the dataset
+		void addGeometryUnsafe(const GEOM& g);
 		void addFeature(const ConstFeature<GEOM>& feature);
 		void addFeatureUnsafe(const ConstFeature<GEOM>& feature);
 
@@ -227,7 +228,6 @@ namespace lapis {
 		void setNumericField(size_t index, const std::string& name, T value);
 
         void projectInPlace(const CoordRef& newCrs);
-        void projectInPlacePreciseExtent(const CoordRef& newCrs);
 
 		void appendFile(const std::string& filename);
         void appendFile(const std::filesystem::path& filename);
@@ -265,10 +265,11 @@ namespace lapis {
 
 	private:
 		std::vector<GEOM> _geometries;
-		Extent _extent;
+		mutable Extent _extent;
 		AttributeTable _attributes;
 
-		void _projectInPlaceShared(const CoordRef& newCrs);
+		CoordRef _crs;
+		mutable bool _extentCacheValid = false;
 	};
 
 	template<class GEOM>
@@ -442,8 +443,8 @@ namespace lapis {
 
 	template<class GEOM>
 	inline VectorDataset<GEOM>::VectorDataset(const CoordRef& crs)
+		: _crs(crs)
 	{
-		_extent.defineCRS(crs);
 	}
     template<class GEOM>
 	inline VectorDataset<GEOM>::VectorDataset(const std::string& filename)
@@ -469,9 +470,7 @@ namespace lapis {
 		reserve(layer->GetFeatureCount());
 		OGRSpatialReference* osr = layer->GetSpatialRef();
 		CoordRef crs(osr);
-		OGREnvelope envelope;
-		layer->GetExtent(&envelope);
-		_extent = Extent(envelope.MinX, envelope.MaxX, envelope.MinY, envelope.MaxY, crs);
+		_crs = crs;
 
 		for (const OGRFeatureUniquePtr& feature : layer) {
 			if (!initFields) {
@@ -515,6 +514,11 @@ namespace lapis {
 				}
 			}
 		}
+
+		OGREnvelope envelope;
+		layer->GetExtent(&envelope);
+		_extent = Extent(envelope.MinX, envelope.MaxX, envelope.MinY, envelope.MaxY, crs);
+		_extentCacheValid = true;
 	}
     template<class GEOMETRY>
 	inline VectorDataset<GEOMETRY>::VectorDataset(const std::filesystem::path& filename)
@@ -531,6 +535,7 @@ namespace lapis {
 		//keep a running count of features so we can reserve the sum
         size_t totalFeatures = 0;
         CoordRef commonCrs;
+		Extent runningExtent;
 		std::vector<std::string> fieldNames;
 		std::vector<FieldType> fieldTypes;
         std::vector<size_t> fieldWidths;
@@ -556,6 +561,9 @@ namespace lapis {
 
 			if (firstFile) {
                 commonCrs = CoordRef(layer->GetSpatialRef());
+				OGREnvelope envelope;
+				layer->GetExtent(&envelope);
+                runningExtent = Extent(envelope.MinX, envelope.MaxX, envelope.MinY, envelope.MaxY, commonCrs);
 				for (int i = 0; i < layer->GetLayerDefn()->GetFieldCount(); ++i) {
 					OGRFieldDefn* field = layer->GetLayerDefn()->GetFieldDefn(i);
 					fieldNames.push_back(getFieldName(field));
@@ -589,6 +597,9 @@ namespace lapis {
 			if (layer->GetLayerDefn()->GetFieldCount() != static_cast<int>(fieldNames.size())) {
 				throw std::runtime_error("Attribute table of " + filename.string() + " does not match other files in the set");
 			}
+            OGREnvelope envelope;
+            layer->GetExtent(&envelope);
+            runningExtent = extendExtent(runningExtent, Extent(envelope.MinX, envelope.MaxX, envelope.MinY, envelope.MaxY, fileCrs));
 			for (int i = 0; i < layer->GetLayerDefn()->GetFieldCount(); ++i) {
 				OGRFieldDefn* field = layer->GetLayerDefn()->GetFieldDefn(i);
 				if (getFieldName(field) != fieldNames[i]) {
@@ -622,8 +633,9 @@ namespace lapis {
             totalFeatures += layer->GetFeatureCount();
 		}
 
+		_crs = commonCrs;
+
         reserve(totalFeatures);
-        _extent.defineCRS(commonCrs);
 		for (size_t i = 0; i < fieldNames.size(); ++i) {
 			switch (fieldTypes[i]) {
 			case FieldType::Integer:
@@ -640,6 +652,9 @@ namespace lapis {
 		for (const fs::path& filename : filenames) {
 			appendFile(filename);
         }
+
+		_extent = runningExtent;
+		_extentCacheValid = true;
 	}
 
     template<class GEOM>
@@ -651,7 +666,7 @@ namespace lapis {
 			throw InvalidVectorFileException("Could not create shapefile " + filename);
 		}
 		OGRSpatialReference crs;
-		crs.importFromWkt(_extent.crs().getCleanEPSG().getCompleteWKT().c_str());
+		crs.importFromWkt(_crs.getCleanEPSG().getCompleteWKT().c_str());
 
 		OGRLayer* layer = outshp->CreateLayer("layer", &crs, GEOM::gdalGeometryTypeStatic, nullptr);
 		if (layer == nullptr) {
@@ -743,40 +758,33 @@ namespace lapis {
 	inline void VectorDataset<GEOM>::replaceGeometry(size_t index, const GEOM& geom)
 	{
 		_geometries[index] = geom;
-        _extent = extendExtent(_extent, geom.boundingBox());
-	}
-	template<class GEOM>
-	inline void VectorDataset<GEOM>::replaceGeometryPreciseExtent(size_t index, const GEOM& geom)
-	{
-		_geometries[index] = geom;
-		bool init = false;
-		for (const Feature<GEOM, AttributeTable*>& f : *this) {
-			if (!init) {
-				_extent = f.getGeometry().boundingBox();
-				init = true;
-			}
-			else {
-				_extent = extendExtent(_extent, f.getGeometry().boundingBox());
-			}
-        }
+        _extentCacheValid = false;
 	}
     template<class GEOM>
 	inline void VectorDataset<GEOM>::addGeometry(const GEOM& g)
 	{
+        if (!g.crs().isConsistent(_crs)) {
+			throw CRSMismatchException("Geometry CRS does not match dataset CRS");
+		}
+		if (nFeature() == 0) {
+			if (_crs.isEmpty()) {
+				_crs = g.crs();
+			}
+		}
+		addGeometryUnsafe(g);
+	}
+	template<class GEOM>
+	inline void VectorDataset<GEOM>::addGeometryUnsafe(const GEOM& g)
+	{
 		_geometries.push_back(g);
 		_attributes.addRow();
-		if (nFeature() == 1) {
-			_extent = g.boundingBox();
-		}
-		else {
-			_extent = extendExtent(_extent, g.boundingBox());
-        }
-	}
+		_extentCacheValid = false;
+    }
 
 	template<class GEOM>
 	inline void VectorDataset<GEOM>::addFeature(const ConstFeature<GEOM>& feature)
 	{
-		if (!feature.getGeometry().crs().isConsistent(_extent.crs())) {
+		if (!feature.getGeometry().crs().isConsistent(_crs)) {
 			throw CRSMismatchException("Feature CRS does not match dataset CRS");
         }
 		for (const auto& fieldName : feature.getAllFieldNames()) {
@@ -824,24 +832,29 @@ namespace lapis {
                 break;
 			}
 		}
-
-
-		if (nFeature() == 1) {
-			_extent = geometryCopy.boundingBox();
-		}
-		else {
-			_extent = extendExtent(_extent, geometryCopy.boundingBox());
-        }
 	}
 
     template<class GEOM>
 	inline const CoordRef& VectorDataset<GEOM>::crs() const
 	{
-		return _extent.crs();
+		return _crs;
 	}
     template<class GEOM>
 	inline const Extent& VectorDataset<GEOM>::extent() const
 	{
+		if (_extentCacheValid) {
+			return _extent;
+        }
+		if (nFeature() == 0) {
+			_extent = Extent(0, 0, 0, 0, _crs);
+			return _extent;
+			//intentionally not setting the cache to be valid
+		}
+        _extent = _geometries[0].boundingBox();
+		for (size_t i = 1; i < _geometries.size(); ++i) {
+			_extent = extendExtent(_extent, _geometries[i].boundingBox());
+		}
+		_extentCacheValid = true;
 		return _extent;
 	}
     template<class GEOM>
@@ -922,34 +935,18 @@ namespace lapis {
 	template<class GEOM>
 	inline void VectorDataset<GEOM>::projectInPlace(const CoordRef& newCrs)
 	{
-		if (_extent.crs().isConsistent(newCrs)) {
+		if (_crs.isConsistent(newCrs)) {
 			return;
 		}
-		_projectInPlaceShared(newCrs);
-		
-		_extent = QuadExtent(_extent, newCrs).outerExtent();
-    }
-	template<class GEOM>
-	inline void VectorDataset<GEOM>::projectInPlacePreciseExtent(const CoordRef& newCrs)
-	{
-		if (_extent.crs().isConsistent(newCrs)) {
-			return;
-		}
-		_projectInPlaceShared(newCrs);
+		const CoordTransform& transform = CoordTransformFactory::getTransform(_crs, newCrs);
 
-		bool init = false;
-		Extent newExtent;
-		for (const GEOM& geometry : _geometries) {
-			if (!init) {
-				newExtent = geometry.boundingBox();
-				init = true;
-			}
-			else {
-				newExtent = extendExtent(newExtent, geometry.boundingBox());
-			}
+		for (GEOM& geometry : _geometries) {
+			geometry.projectInPlace(transform);
 		}
-		_extent = newExtent;
-	}
+		_crs = newCrs;
+		
+		_extentCacheValid = false;
+    }
 
 	template<class GEOM>
 	inline void VectorDataset<GEOM>::appendFile(const std::string& filename)
@@ -977,7 +974,7 @@ namespace lapis {
 
 		OGRSpatialReference* osr = layer->GetSpatialRef();
 		CoordRef otherCrs(osr);
-		if (!otherCrs.isConsistentHoriz(_extent.crs())) {
+		if (!otherCrs.isConsistentHoriz(_crs)) {
             throw CRSMismatchException("Cannot append vector file " + filename + " with different CRS");
         }
 
@@ -1040,18 +1037,6 @@ namespace lapis {
 	inline void VectorDataset<GEOM>::appendFile(const std::filesystem::path& filename)
 	{
         appendFile(filename.string());
-	}
-
-	template<class GEOM>
-	inline void VectorDataset<GEOM>::_projectInPlaceShared(const CoordRef& newCrs) {
-		if (_extent.crs().isConsistent(newCrs)) {
-			return;
-        }
-		const CoordTransform& transform = CoordTransformFactory::getTransform(_extent.crs(), newCrs);
-
-		for (GEOM& geometry : _geometries) {
-			geometry.projectInPlace(transform);
-        }
 	}
 
     template<class GEOM>

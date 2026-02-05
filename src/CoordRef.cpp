@@ -106,6 +106,9 @@ namespace lapis {
 		if (getPtr() == nullptr && other.getPtr() == nullptr) {
 			return true;
 		}
+		if (getPtr() == other.getPtr()) {
+			return true;
+		}
 		return proj_is_equivalent_to_with_ctx(ProjContextByThread::get(), _p.get(), other.getPtr(), PJ_COMP_EQUIVALENT);
 	}
 
