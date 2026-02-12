@@ -177,7 +177,7 @@ namespace lapis {
 
 		//Writes the Raster object to the harddrive. Missing values will be replaced by naValue. It's up to the user to make sure the driver and the file extension correspond.
 		//You can specify the datatype of the file, or leave it as GDT_Unknown to choose the one that corresponds to the template of the raster object.
-		void writeRaster(const std::string& file, const std::string driver = "GTiff", const T navalue = std::numeric_limits<T>::lowest(), GDALDataType gdt = GDT_Unknown) const;
+		void writeRaster(const std::string& file, const std::string driver = "GTiff", std::optional<T> navalue = nullopt, GDALDataType gdt = GDT_Unknown) const;
 
 		//This function takes another raster whose alignment is consistent with this one (same cellsize, origin, crs)
 		//For any overlapping cells where this is nodata, and the other raster isn't, replaces the value with the new value
@@ -756,10 +756,29 @@ namespace lapis {
 	}
 
 	template<class T>
-	void Raster<T>::writeRaster(const std::string& file, const std::string driver, const T navalue, GDALDataType dataType) const {
+	void Raster<T>::writeRaster(const std::string& file, const std::string driver, std::optional<T> navalue, GDALDataType dataType) const {
 		if (dataType == GDT_Unknown) {
 			dataType = GDT();
 		}
+		if (dataType == GDT_Unknown) {
+			throw InvalidRasterFileException("Unable to determine GDALDataType for type " + std::string(typeid(T).name()) + ". Please specify the data type explicitly.");
+        }
+        if (dataType == GDT_Int64 || dataType == GDT_UInt64) {
+			throw InvalidRasterFileException("Writing 64-bit integer rasters is not supported.");
+		}
+
+		if (!navalue.has_value()) {
+			if constexpr (std::is_floating_point<T>::value) {
+				navalue = std::numeric_limits<T>::quiet_NaN();
+			}
+			else if constexpr (std::is_unsigned_v<T>) {
+				navalue = std::numeric_limits<T>::max();
+			}
+			else {
+				navalue = std::numeric_limits<T>::min();
+			}
+		}
+
 		UniqueGdalDataset wgd = gdalCreateWrapperRaster(driver, file, ncol(), nrow(), dataType);
 		if (!wgd) {
 			throw InvalidRasterFileException("Unable to open " + file + " as a raster");
