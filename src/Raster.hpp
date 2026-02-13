@@ -177,7 +177,7 @@ namespace lapis {
 
 		//Writes the Raster object to the harddrive. Missing values will be replaced by naValue. It's up to the user to make sure the driver and the file extension correspond.
 		//You can specify the datatype of the file, or leave it as GDT_Unknown to choose the one that corresponds to the template of the raster object.
-		void writeRaster(const std::string& file, const std::string driver = "GTiff", std::optional<T> navalue = nullopt, GDALDataType gdt = GDT_Unknown) const;
+		void writeRaster(const std::string& file, const std::string driver = "GTiff", std::optional<T> navalue = std::nullopt, GDALDataType gdt = GDT_Unknown) const;
 
 		//This function takes another raster whose alignment is consistent with this one (same cellsize, origin, crs)
 		//For any overlapping cells where this is nodata, and the other raster isn't, replaces the value with the new value
