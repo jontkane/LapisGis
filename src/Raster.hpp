@@ -788,11 +788,11 @@ namespace lapis {
 		wgd->SetProjection(_crs.getCompleteWKT().c_str());
 		for (cell_t cell = 0; cell < ncell(); ++cell) {
 			if (!_data[cell].has_value()) {
-				_data[cell].value() = navalue;
+				_data[cell].value() = *navalue;
 			}
 		}
 		auto band = wgd->GetRasterBand(1);
-		band->SetNoDataValue((double)navalue);
+		band->SetNoDataValue((double)*navalue);
 		band->RasterIO(GF_Write, 0, 0, _ncol, _nrow, _data.value().data(), _ncol, _nrow, dataType, 0, 0);
 	}
 
