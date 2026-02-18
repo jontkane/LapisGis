@@ -60,6 +60,7 @@ namespace lapis {
 
 		Extent boundingBox() const override;
 
+        using Geometry::projectInPlace;
         void projectInPlace(const CoordTransform& transform) override;
 	private:
 		CoordXY _point;
@@ -97,6 +98,7 @@ namespace lapis {
 
 		coord_t area() const;
 
+		using Geometry::projectInPlace;
         void projectInPlace(const CoordTransform& transform) override;
 	private:
 		std::vector<CoordXY> _outerRing;
@@ -137,6 +139,7 @@ namespace lapis {
 
 		coord_t area() const;
 
+		using Geometry::projectInPlace;
         void projectInPlace(const CoordTransform& transform) override;
 	private:
         std::vector<Polygon> _polygons;
