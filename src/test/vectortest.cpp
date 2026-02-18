@@ -169,4 +169,124 @@ namespace lapis {
             }
         }
     }
+
+    TEST(VectorTest, OverlapsExtent) {
+        CoordRef crs("2285");
+
+        // Point inside extent
+        Point p1(5, 5, crs);
+        Extent e1(0, 10, 0, 10, crs);
+        EXPECT_TRUE(p1.overlapsExtent(e1));
+        EXPECT_TRUE(p1.overlapsExtentSameCrs(e1));
+
+        // Point outside extent
+        Point p2(15, 15, crs);
+        EXPECT_FALSE(p2.overlapsExtent(e1));
+        EXPECT_FALSE(p2.overlapsExtentSameCrs(e1));
+
+        // Point on extent boundary (undefined - just check it doesn't crash)
+        Point p3(10, 5, crs);
+        p3.overlapsExtent(e1);
+        p3.overlapsExtentSameCrs(e1);
+
+        // Polygon fully inside extent
+        std::vector<CoordXY> ring1 = { {2,2}, {2,8}, {8,8}, {8,2} };
+        Polygon poly1(ring1, crs);
+        EXPECT_TRUE(poly1.overlapsExtent(e1));
+        EXPECT_TRUE(poly1.overlapsExtentSameCrs(e1));
+
+        // Polygon fully contains extent
+        std::vector<CoordXY> ring2 = { {-5,-5}, {-5,15}, {15,15}, {15,-5} };
+        Polygon poly2(ring2, crs);
+        EXPECT_TRUE(poly2.overlapsExtent(e1));
+        EXPECT_TRUE(poly2.overlapsExtentSameCrs(e1));
+
+        // Polygon completely outside extent
+        std::vector<CoordXY> ring3 = { {20,20}, {20,25}, {25,25}, {25,20} };
+        Polygon poly3(ring3, crs);
+        EXPECT_FALSE(poly3.overlapsExtent(e1));
+        EXPECT_FALSE(poly3.overlapsExtentSameCrs(e1));
+
+        // Polygon overlaps extent corner
+        std::vector<CoordXY> ring4 = { {8,8}, {8,12}, {12,12}, {12,8} };
+        Polygon poly4(ring4, crs);
+        EXPECT_TRUE(poly4.overlapsExtent(e1));
+        EXPECT_TRUE(poly4.overlapsExtentSameCrs(e1));
+
+        // Polygon overlaps extent on one side
+        std::vector<CoordXY> ring5 = { {-2,3}, {-2,7}, {5,7}, {5,3} };
+        Polygon poly5(ring5, crs);
+        EXPECT_TRUE(poly5.overlapsExtent(e1));
+        EXPECT_TRUE(poly5.overlapsExtentSameCrs(e1));
+
+        // Polygon edge crosses extent horizontally
+        std::vector<CoordXY> ring6 = { {-2,5}, {-2,6}, {12,6}, {12,5} };
+        Polygon poly6(ring6, crs);
+        EXPECT_TRUE(poly6.overlapsExtent(e1));
+        EXPECT_TRUE(poly6.overlapsExtentSameCrs(e1));
+
+        // Polygon edge crosses extent vertically
+        std::vector<CoordXY> ring7 = { {5,-2}, {6,-2}, {6,12}, {5,12} };
+        Polygon poly7(ring7, crs);
+        EXPECT_TRUE(poly7.overlapsExtent(e1));
+        EXPECT_TRUE(poly7.overlapsExtentSameCrs(e1));
+
+        // Polygon edge crosses extent diagonally
+        std::vector<CoordXY> ring8 = { {-2,-2}, {-1,-2}, {11,12}, {10,12} };
+        Polygon poly8(ring8, crs);
+        EXPECT_TRUE(poly8.overlapsExtent(e1));
+        EXPECT_TRUE(poly8.overlapsExtentSameCrs(e1));
+
+        // Polygon with hole, extent inside hole
+        std::vector<CoordXY> outer9 = { {0,0}, {0,10}, {10,10}, {10,0} };
+        std::vector<CoordXY> inner9 = { {3,3}, {3,7}, {7,7}, {7,3} };
+        Polygon poly9(outer9, crs);
+        poly9.addInnerRing(inner9);
+        Extent e9(4, 6, 4, 6, crs);
+        EXPECT_FALSE(poly9.overlapsExtent(e9)); // Hole boundary overlaps extent
+
+        // Polygon with hole, extent crosses hole boundary
+        Extent e10(2, 8, 2, 8, crs);
+        EXPECT_TRUE(poly9.overlapsExtent(e10));
+        EXPECT_TRUE(poly9.overlapsExtentSameCrs(e10));
+
+        // Polygon with hole, extent in solid part only
+        Extent e11(0, 2, 0, 2, crs);
+        EXPECT_TRUE(poly9.overlapsExtent(e11));
+        EXPECT_TRUE(poly9.overlapsExtentSameCrs(e11));
+
+        // L-shaped polygon and extent that don't touch
+        std::vector<CoordXY> lShape = { {0,0}, {0,5}, {2,5}, {2,2}, {5,2}, {5,0} };
+        Polygon polyL(lShape, crs);
+        Extent eL(3, 5, 3, 5, crs);
+        EXPECT_FALSE(polyL.overlapsExtent(eL));
+        EXPECT_FALSE(polyL.overlapsExtentSameCrs(eL));
+
+        // MultiPolygon with one polygon overlapping
+        MultiPolygon mp1;
+        mp1.setCrs(crs);
+        mp1.addPolygon(Polygon({ {20,20}, {20,25}, {25,25}, {25,20} }, crs)); // outside
+        mp1.addPolygon(Polygon({ {5,5}, {5,8}, {8,8}, {8,5} }, crs)); // inside
+        EXPECT_TRUE(mp1.overlapsExtent(e1));
+        EXPECT_TRUE(mp1.overlapsExtentSameCrs(e1));
+
+        // MultiPolygon with no polygons overlapping
+        MultiPolygon mp2;
+        mp2.setCrs(crs);
+        mp2.addPolygon(Polygon({ {20,20}, {20,25}, {25,25}, {25,20} }, crs));
+        mp2.addPolygon(Polygon({ {30,30}, {30,35}, {35,35}, {35,30} }, crs));
+        EXPECT_FALSE(mp2.overlapsExtent(e1));
+        EXPECT_FALSE(mp2.overlapsExtentSameCrs(e1));
+
+        // Empty MultiPolygon
+        MultiPolygon mp3;
+        mp3.setCrs(crs);
+        EXPECT_FALSE(mp3.overlapsExtent(e1));
+        EXPECT_FALSE(mp3.overlapsExtentSameCrs(e1));
+
+        // overlapsExtent should handle CRS transform, overlapsExtentSameCrs won't
+        Point pWgs84(5, 5, CoordRef("4326"));
+        // This should transform and check (result depends on transformation)
+        pWgs84.overlapsExtent(e1); // Just verify it doesn't crash
+    }
 }

@@ -227,6 +227,9 @@ namespace lapis {
 		}
 
 		void maskByPolygon(const Polygon& polygon) {
+			if (!polygon.crs().isConsistentHoriz(crs())) {
+				throw CRSMismatchException("CRS mismatch in maskByPolygon");
+			}
             Extent polyExt = polygon.boundingBox();
 			for (cell_t cell : CellIterator(*this)) {
 				coord_t x = xFromCellUnsafe(cell);
@@ -241,6 +244,9 @@ namespace lapis {
 			}
 		}
 		void maskByMultiPolygon(const MultiPolygon& multipolygon) {
+            if (!multipolygon.crs().isConsistentHoriz(crs())) {
+				throw CRSMismatchException("CRS mismatch in maskByMultiPolygon");
+			}
 			Extent multiPolyExt = multipolygon.boundingBox();
 			for (cell_t cell : CellIterator(*this)) {
 				coord_t x = xFromCellUnsafe(cell);
@@ -254,6 +260,57 @@ namespace lapis {
 				}
             }
 		}
+
+		bool dataOverlapsPolygon(const Polygon& polygon) const {
+			Polygon copy;
+			const Polygon* use = &polygon;
+			if (!polygon.crs().isConsistentHoriz(crs())) {
+                copy = polygon;
+				copy.projectInPlace(crs());
+                use = &copy;
+			}
+            Extent polyExt = use->boundingBox();
+			for (cell_t cell : CellIterator(*this)) {
+                auto v = atCellUnsafe(cell);
+				if (!v.has_value()) {
+					continue;
+				}
+				coord_t x = xFromCellUnsafe(cell);
+                coord_t y = yFromCellUnsafe(cell);
+                if (!polyExt.contains(x, y)) {
+					continue;
+				}
+				if (use->containsPoint(x, y)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		bool dataOverlapsMultiPolygon(const MultiPolygon& multipolygon) const {
+			MultiPolygon copy;
+			const MultiPolygon* use = &multipolygon;
+			if (!multipolygon.crs().isConsistentHoriz(crs())) {
+                copy = multipolygon;
+				copy.projectInPlace(crs());
+                use = &copy;
+			}
+            Extent multiPolyExt = use->boundingBox();
+			for (cell_t cell : CellIterator(*this)) {
+				auto v = atCellUnsafe(cell);
+				if (!v.has_value()) {
+					continue;
+				}
+				coord_t x = xFromCellUnsafe(cell);
+				coord_t y = yFromCellUnsafe(cell);
+				if (!multiPolyExt.contains(x, y)) {
+					continue;
+				}
+				if (use->containsPoint(x, y)) {
+					return true;
+				}
+			}
+			return false;
+        }
 
 	private:
 		mutable RastData<T> _data;

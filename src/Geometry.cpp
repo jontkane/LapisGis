@@ -86,6 +86,23 @@ namespace lapis {
         _crs = transform.dst();
     }
 
+    bool Point::overlapsExtent(const Extent& e) const
+    {
+        if (_crs.isConsistentHoriz(e.crs())) {
+            return overlapsExtentSameCrs(e);
+        }
+        else {
+            const CoordTransform& transform = CoordTransformFactory::getTransform(_crs, e.crs());
+            CoordXY transformedPoint = transform.transformSingleXY(_point.x, _point.y);
+            return e.contains(transformedPoint.x, transformedPoint.y);
+        }
+    }
+
+    bool Point::overlapsExtentSameCrs(const Extent& e) const
+    {
+        return e.contains(x(), y());
+    }
+
     void Point::_sharedConstructorFromGdal(const OGRGeometry& geom)
     {
         if (wkbFlatten(geom.getGeometryType()) != wkbPoint) {
@@ -284,6 +301,170 @@ namespace lapis {
         setCrs(transform.dst());
     }
 
+    bool Polygon::overlapsExtent(const Extent& e) const
+    {
+        if (_crs.isConsistentHoriz(e.crs())) {
+            return overlapsExtentSameCrs(e);
+        }
+
+        Polygon otherPoly{ QuadExtent(e,CoordTransformFactory::getTransform(e.crs(), _crs)) };
+
+        //they overlap if either contains a vertex of the other, or if any pair of edges intersect.
+        //first check if bounding box overlaps
+        if (!boundingBox().overlapsUnsafe(otherPoly.boundingBox())) {
+            return false;
+        }
+
+        //check if other vertices are inside this
+        //note that otherpoly is guaranteed to not have inner rings
+        for (const CoordXY& xy : otherPoly._outerRing) {
+            if (containsPoint(xy)) {
+                return true;
+            }
+        }
+
+        //check if this polygon's vertices are inside the other
+        for (const CoordXY& xy : _outerRing) {
+            if (otherPoly.containsPoint(xy)) {
+                return true;
+            }
+        }
+        for (const std::vector<CoordXY>& innerRing : _innerRings) {
+            for (const CoordXY& xy : innerRing) {
+                if (otherPoly.containsPoint(xy)) {
+                    return true;
+                }
+            }
+        }
+
+        auto lineSegmentsIntersect = [](coord_t x1, coord_t y1, coord_t x2, coord_t y2, coord_t x3, coord_t y3, coord_t x4, coord_t y4) {
+            // Check if line segments (x1,y1)-(x2,y2) and (x3,y3)-(x4,y4) intersect
+            auto orientation = [](coord_t ax, coord_t ay, coord_t bx, coord_t by, coord_t cx, coord_t cy) {
+                coord_t val = (by - ay) * (cx - bx) - (bx - ax) * (cy - by);
+                if (val == 0) return 0; // collinear
+                return (val > 0) ? 1 : 2; // clock or counterclock wise
+            };
+            int o1 = orientation(x1, y1, x2, y2, x3, y3);
+            int o2 = orientation(x1, y1, x2, y2, x4, y4);
+            int o3 = orientation(x3, y3, x4, y4, x1, y1);
+            int o4 = orientation(x3, y3, x4, y4, x2, y2);
+            if (o1 != o2 && o3 != o4)
+                return true;
+            return false; // Doesn't fall in any of the above cases
+            };
+
+        //check if any edge of this polygon intersects any edge of the other
+        for (size_t i = 0; i < _outerRing.size() - 1; i++) {
+            for (size_t j = 0; j < otherPoly._outerRing.size() - 1; j++) {
+                if (lineSegmentsIntersect(_outerRing[i].x, _outerRing[i].y, _outerRing[i + 1].x, _outerRing[i + 1].y,
+                    otherPoly._outerRing[j].x, otherPoly._outerRing[j].y, otherPoly._outerRing[j + 1].x, otherPoly._outerRing[j + 1].y)) {
+                    return true;
+                }
+            }
+        }
+        for (const std::vector<CoordXY>& innerRing : _innerRings) {
+            for (size_t i = 0; i < innerRing.size() - 1; i++) {
+                for (size_t j = 0; j < otherPoly._outerRing.size() - 1; j++) {
+                    if (lineSegmentsIntersect(innerRing[i].x, innerRing[i].y, innerRing[i + 1].x, innerRing[i + 1].y,
+                        otherPoly._outerRing[j].x, otherPoly._outerRing[j].y, otherPoly._outerRing[j + 1].x, otherPoly._outerRing[j + 1].y)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    bool Polygon::overlapsExtentSameCrs(const Extent& e) const
+    {
+        //they overlap if either contains a vertex of the other, or if any pair of edges intersect.
+
+        //first check if bounding box overlaps
+        if (!boundingBox().overlapsUnsafe(e)) {
+            return false;
+        }
+
+        //check if polygon vertices are inside the extent
+        for (const CoordXY& xy : _outerRing) {
+            if (e.contains(xy.x, xy.y)) {
+                return true;
+            }
+        }
+
+        //check if extent corners are inside the polygon
+        std::vector<CoordXY> extentCorners = {
+            {e.xmin(), e.ymin()},
+            {e.xmin(), e.ymax()},
+            {e.xmax(), e.ymin()},
+            {e.xmax(), e.ymax()}
+        };
+        for (const CoordXY& xy : extentCorners) {
+            if (containsPoint(xy)) {
+                return true;
+            }
+        }
+
+        //check if a line segment intersects a horizontal line segment
+        auto segmentIntersectsHorizontal = [](coord_t x1, coord_t y1, coord_t x2, coord_t y2, coord_t y, coord_t xMin, coord_t xMax) {
+            if ((y1 > y) != (y2 > y)) {
+                coord_t intersectX = (x2 - x1) * (y - y1) / (y2 - y1) + x1;
+                return (intersectX >= xMin) && (intersectX <= xMax);
+            }
+            return false;
+        };
+        //same but for vertical line segments
+        auto segmentIntersectsVertical = [](coord_t x1, coord_t y1, coord_t x2, coord_t y2, coord_t x, coord_t yMin, coord_t yMax) {
+            if ((x1 > x) != (x2 > x)) {
+                coord_t intersectY = (y2 - y1) * (x - x1) / (x2 - x1) + y1;
+                return (intersectY >= yMin) && (intersectY <= yMax);
+            }
+            return false;
+            };
+
+        auto segmentIntersectsExtent = [&](coord_t x1, coord_t y1, coord_t x2, coord_t y2) {
+            //check bounding box first
+            coord_t segXMin = std::min(x1, x2);
+            coord_t segXMax = std::max(x1, x2);
+            coord_t segYMin = std::min(y1, y2);
+            coord_t segYMax = std::max(y1, y2);
+
+            Extent segmentExtent(segXMin, segXMax, segYMin, segYMax);
+            if (!segmentExtent.overlapsUnsafe(e)) {
+                return false;
+            }
+
+            //check if it intersects any of the four edges of the extent
+            if (segmentIntersectsHorizontal(x1, y1, x2, y2, e.ymin(), e.xmin(), e.xmax())) {
+                return true;
+            };
+            if (segmentIntersectsHorizontal(x1, y1, x2, y2, e.ymax(), e.xmin(), e.xmax())) {
+                return true;
+            };
+            if (segmentIntersectsVertical(x1, y1, x2, y2, e.xmin(), e.ymin(), e.ymax())) {
+                return true;
+            };
+            if (segmentIntersectsVertical(x1, y1, x2, y2, e.xmax(), e.ymin(), e.ymax())) {
+                return true;
+            };
+            return false;
+            };
+
+        //check if any edge of the polygon intersects the extent
+        for (size_t i = 0; i < _outerRing.size() - 1; i++) {
+            if (segmentIntersectsExtent(_outerRing[i].x, _outerRing[i].y, _outerRing[i + 1].x, _outerRing[i + 1].y)) {
+                return true;
+            }
+        }
+        for (const std::vector<CoordXY>& innerRing : _innerRings) {
+            for (size_t i = 0; i < innerRing.size() - 1; i++) {
+                if (segmentIntersectsExtent(innerRing[i].x, innerRing[i].y, innerRing[i + 1].x, innerRing[i + 1].y)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     coord_t Polygon::_areaFromRing(const std::vector<CoordXY>& ring)
     {
         int nPoints = (int)ring.size();
@@ -401,6 +582,24 @@ namespace lapis {
             poly.projectInPlace(transform);
         }
         setCrs(transform.dst());
+    }
+    bool MultiPolygon::overlapsExtent(const Extent& e) const
+    {
+        for (const Polygon& poly : _polygons) {
+            if (poly.overlapsExtent(e)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    bool MultiPolygon::overlapsExtentSameCrs(const Extent& e) const
+    {
+        for (const Polygon& poly : _polygons) {
+            if (poly.overlapsExtentSameCrs(e)) {
+                return true;
+            }
+        }
+        return false;
     }
     void MultiPolygon::_sharedConstructorFromGdal(const OGRGeometry& geom, const CoordRef& crs)
     {

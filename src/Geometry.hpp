@@ -31,6 +31,11 @@ namespace lapis {
 		void projectInPlace(const CoordRef& newCrs);
 		virtual void projectInPlace(const CoordTransform& transform) = 0;
 
+		//returns true if this geometry overlaps the extent. Undefined behavior if they exactly touch; i.e., it may return true or false, depending on the specifics
+		virtual bool overlapsExtent(const Extent& e) const = 0;
+		//as overlapsExtent, but doesn't check the CRSes match
+		virtual bool overlapsExtentSameCrs(const Extent& e) const = 0;
+
 		virtual ~Geometry() = default;
 
 	protected:
@@ -62,6 +67,9 @@ namespace lapis {
 
         using Geometry::projectInPlace;
         void projectInPlace(const CoordTransform& transform) override;
+
+        bool overlapsExtent(const Extent& e) const override;
+        bool overlapsExtentSameCrs(const Extent& e) const override;
 	private:
 		CoordXY _point;
 		void _sharedConstructorFromGdal(const OGRGeometry& geom);
@@ -100,6 +108,9 @@ namespace lapis {
 
 		using Geometry::projectInPlace;
         void projectInPlace(const CoordTransform& transform) override;
+
+		bool overlapsExtent(const Extent& e) const override;
+		bool overlapsExtentSameCrs(const Extent& e) const override;
 	private:
 		std::vector<CoordXY> _outerRing;
         std::vector<std::vector<CoordXY>> _innerRings;
@@ -141,6 +152,9 @@ namespace lapis {
 
 		using Geometry::projectInPlace;
         void projectInPlace(const CoordTransform& transform) override;
+
+		bool overlapsExtent(const Extent& e) const override;
+		bool overlapsExtentSameCrs(const Extent& e) const override;
 	private:
         std::vector<Polygon> _polygons;
 		void _sharedConstructorFromGdal(const OGRGeometry& geom, const CoordRef& crs);

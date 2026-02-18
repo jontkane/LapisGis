@@ -567,4 +567,145 @@ namespace lapis {
         };
         verifyRaster(r, expVal, expHasVal);
 	}
+	
+	TEST_F(RasterTest, dataOverlapsPolygon) {
+		Raster<int> r{ Alignment(Extent(0,10,0,10),10,10) };
+
+		// Test 1: Clear overlap - valued cells inside polygon
+		r.atRC(5, 5).has_value() = true;
+		r.atRC(5, 5).value() = 1;
+
+		std::vector<CoordXY> square = {
+			{2,2}, {8,2}, {8,8}, {2,8}, {2,2}
+		};
+		Polygon poly{ square };
+
+		EXPECT_TRUE(r.dataOverlapsPolygon(poly));
+
+		// Test 2: No overlap - valued cell outside polygon
+		Raster<int> r2{ Alignment(Extent(0,10,0,10),10,10) };
+		r2.atRC(1, 1).has_value() = true;
+		r2.atRC(1, 1).value() = 1;
+
+		std::vector<CoordXY> farSquare = {
+			{6,6}, {9,6}, {9,9}, {6,9}, {6,6}
+		};
+		Polygon polyFar{ farSquare };
+
+		EXPECT_FALSE(r2.dataOverlapsPolygon(polyFar));
+
+		// Test 3: Empty raster (no valued cells)
+		Raster<int> r3{ Alignment(Extent(0,10,0,10),10,10) };
+		EXPECT_FALSE(r3.dataOverlapsPolygon(poly));
+
+		// Test 4: Polygon outside raster extent
+		std::vector<CoordXY> outsideSquare = {
+			{15,15}, {20,15}, {20,20}, {15,20}, {15,15}
+		};
+		Polygon polyOutside{ outsideSquare };
+
+		EXPECT_FALSE(r.dataOverlapsPolygon(polyOutside));
+
+		// Test 5: Polygon with hole - valued cell in hole
+		Raster<int> r4{ Alignment(Extent(0,10,0,10),10,10) };
+		r4.atRC(5, 5).has_value() = true;
+		r4.atRC(5, 5).value() = 1;
+
+		Polygon polyWithHole{ square };
+		std::vector<CoordXY> hole = {
+			{4,4}, {6,4}, {6,6}, {4,6}, {4,4}
+		};
+		polyWithHole.addInnerRing(hole);
+
+		EXPECT_FALSE(r4.dataOverlapsPolygon(polyWithHole));
+
+		// Test 6: Polygon with hole - valued cell outside hole
+		r4.atRC(2, 3).has_value() = true;
+		r4.atRC(2, 3).value() = 2;
+
+		EXPECT_TRUE(r4.dataOverlapsPolygon(polyWithHole));
+
+		// Test 7: Multiple valued cells, only some overlap
+		Raster<int> r5{ Alignment(Extent(0,10,0,10),10,10) };
+		r5.atRC(2, 2).has_value() = true;
+		r5.atRC(5, 5).has_value() = true;
+		r5.atRC(7, 7).has_value() = true;
+
+		EXPECT_TRUE(r5.dataOverlapsPolygon(poly));
+
+		// Test 8: Bounding box overlaps but polygon doesn't contain valued cells
+		Raster<int> r6{ Alignment(Extent(0,10,0,10),10,10) };
+		r6.atRC(1, 5).has_value() = true;
+
+		std::vector<CoordXY> triangle = {
+			{0,0}, {3.1,0}, {0,3.1}, {0,0}
+		};
+		Polygon polyTriangle{ triangle };
+
+		EXPECT_FALSE(r6.dataOverlapsPolygon(polyTriangle));
+	}
+
+	TEST_F(RasterTest, dataOverlapsMultiPolygon) {
+		Raster<int> r{ Alignment(Extent(0,20,0,20),20,20) };
+		r.atRC(14, 5).has_value() = true;
+		r.atRC(14, 5).value() = 1;
+
+		// Test 1: Overlap with first polygon
+		std::vector<CoordXY> square1 = {
+			{2,2}, {8,2}, {8,8}, {2,8}, {2,2}
+		};
+		std::vector<CoordXY> square2 = {
+			{12,12}, {18,12}, {18,18}, {12,18}, {12,12}
+		};
+
+		Polygon poly1{ square1 };
+		Polygon poly2{ square2 };
+		MultiPolygon mp;
+		mp.addPolygon(poly1);
+		mp.addPolygon(poly2);
+
+		EXPECT_TRUE(r.dataOverlapsMultiPolygon(mp));
+
+		// Test 2: Overlap with second polygon
+		Raster<int> r2{ Alignment(Extent(0,20,0,20),20,20) };
+		r2.atRC(4, 15).has_value() = true;
+		r2.atRC(4, 15).value() = 1;
+
+		EXPECT_TRUE(r2.dataOverlapsMultiPolygon(mp));
+
+		// Test 3: No overlap with any polygon
+		Raster<int> r3{ Alignment(Extent(0,20,0,20),20,20) };
+		r3.atRC(10, 10).has_value() = true;
+		r3.atRC(10, 10).value() = 1;
+
+		EXPECT_FALSE(r3.dataOverlapsMultiPolygon(mp));
+
+		// Test 4: Empty raster
+		Raster<int> r4{ Alignment(Extent(0,20,0,20),20,20) };
+		EXPECT_FALSE(r4.dataOverlapsMultiPolygon(mp));
+
+		// Test 5: Both polygons overlap, multiple valued cells
+		Raster<int> r5{ Alignment(Extent(0,20,0,20),20,20) };
+		r5.atRC(14, 5).has_value() = true;
+		r5.atRC(4, 15).has_value() = true;
+		r5.atRC(10, 10).has_value() = true;
+
+		EXPECT_TRUE(r5.dataOverlapsMultiPolygon(mp));
+
+		// Test 6: All polygons outside raster extent
+		std::vector<CoordXY> outsideSquare1 = {
+			{25,25}, {30,25}, {30,30}, {25,30}, {25,30}
+		};
+		std::vector<CoordXY> outsideSquare2 = {
+			{35,35}, {40,35}, {40,40}, {35,40}, {35,40}
+		};
+
+		Polygon polyOut1{ outsideSquare1 };
+		Polygon polyOut2{ outsideSquare2 };
+		MultiPolygon mpOut;
+		mpOut.addPolygon(polyOut1);
+		mpOut.addPolygon(polyOut2);
+
+		EXPECT_FALSE(r.dataOverlapsMultiPolygon(mpOut));
+	}
 }
