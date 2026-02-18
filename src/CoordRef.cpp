@@ -9,6 +9,16 @@ extern "C" {
 	void VSIFree(void* data);
 }
 
+namespace {
+	struct PairPJHasher {
+		size_t operator()(const std::pair<const PJ*, const PJ*>& p) const {
+			size_t h1 = std::hash<const PJ*>()(p.first);
+			size_t h2 = std::hash<const PJ*>()(p.second);
+			return h1 ^ (h2 << 1);
+		}
+	};
+}
+
 namespace lapis {
 	CoordRef::CoordRef(const std::string& s) {
 		_crsFromString(s);
@@ -119,9 +129,37 @@ namespace lapis {
 		if (isSame(other)) {
 			return true;
 		}
-        SharedPJ thishoriz = getHorizontalCrs(_p);
-        SharedPJ otherhoriz = getHorizontalCrs(other._p);
-		return proj_is_equivalent_to(thishoriz.get(), otherhoriz.get(), PJ_COMP_EQUIVALENT);
+
+		// Check cache first
+		static std::mutex cacheMutex;
+		static std::unordered_map<std::pair<const PJ*, const PJ*>, bool, PairPJHasher> cache;
+		static constexpr size_t MAX_CACHE_SIZE = 1000;
+
+		const PJ* thisPtr = _p.get();
+		const PJ* otherPtr = other._p.get();
+		auto key = std::make_pair(std::min(thisPtr, otherPtr), std::max(thisPtr, otherPtr));
+
+		{
+			std::scoped_lock lock{ cacheMutex };
+			auto it = cache.find(key);
+			if (it != cache.end()) {
+				return it->second;
+			}
+		}
+
+		SharedPJ thishoriz = getHorizontalCrs(_p);
+		SharedPJ otherhoriz = getHorizontalCrs(other._p);
+		bool result = proj_is_equivalent_to(thishoriz.get(), otherhoriz.get(), PJ_COMP_EQUIVALENT);
+
+		{
+			std::scoped_lock lock{ cacheMutex };
+			if (cache.size() >= MAX_CACHE_SIZE) {
+				cache.clear();
+			}
+			cache[key] = result;
+		}
+
+		return result;
 	}
 
 	bool CoordRef::isConsistentZUnits(const CoordRef& other) const {
