@@ -1,6 +1,6 @@
 #pragma once
 #ifndef lapis_projwrappers_h
-#define lapid_projwrappers_h
+#define lapis_projwrappers_h
 
 #include"gis_pch.hpp"
 #include"LapisGisTypeDefs.hpp"
@@ -19,9 +19,6 @@ namespace lapis {
 	class ProjContextByThread {
 	private:
 		inline static std::unordered_map<std::thread::id, SharedPJCtx> _ctxs;
-		static bool set_proj_db_for_null_context;
-		static bool set_proj_lib;
-		static bool set_proj_data;
 	public:
 		static PJ_CONTEXT* get();
 	};
@@ -46,7 +43,12 @@ namespace lapis {
 		PJ_OBJ_LIST* _obj;
 	};
 
+	bool setProjDefaultDirectory(const std::string& path);
 	bool setProjDirectory(const std::string& path, PJ_CONTEXT* context);
+
+	bool isProjDirectorySet();
+	std::string getProjDirectory();
+	bool projDbExists();
 }
 
 #endif

@@ -4,6 +4,14 @@
 
 namespace lapis {
 
+	static std::string projDirectory = "";
+	static std::mutex projDirectoryMutex;
+#ifdef LAPISGIS_PROJDB_IN_EXE_DIR
+	static bool projDirInitialized = setProjDefaultDirectory(executableFilePath());
+#else
+	static bool projDirInitialized = false;
+#endif
+
 	std::string executableFilePath() {
 		int length = wai_getExecutablePath(nullptr, 0, nullptr);
 		std::vector<char> path;
@@ -23,9 +31,9 @@ namespace lapis {
 		if (!_ctxs.count(thisthread)) {
 			_ctxs.emplace(thisthread, getNewPJContext());
 
-#ifdef LAPISGIS_PROJDB_IN_EXE_DIR
-			setProjDirectory(executableFilePath(), _ctxs.at(thisthread).get());
-#endif
+			if (projDirInitialized) {
+                setProjDirectory(projDirectory, _ctxs.at(thisthread).get());
+			}
 		}
 		return _ctxs.at(thisthread).get();
 	}
@@ -128,6 +136,31 @@ namespace lapis {
 			return SharedPJ();
 		}
 	}
+
+	bool setProjDefaultDirectory(const std::string& path)
+	{
+		namespace fs = std::filesystem;
+        std::scoped_lock lock{ projDirectoryMutex };
+        std::string folder;
+        if (!fs::is_directory(path)) {
+			folder = fs::path(path).parent_path().string();
+		}
+		else {
+			folder = path;
+		}
+        projDirectory = folder;
+		if (folder.empty()) {
+			return false;
+		}
+        _putenv(("PROJ_LIB=" + folder).c_str());
+        _putenv(("PROJ_DATA=" + folder).c_str());
+		setProjDirectory(folder, nullptr);
+
+        projDirInitialized = true;
+
+		return true;
+	}
+
 	bool setProjDirectory(const std::string& path, PJ_CONTEXT* context)
 	{
 		namespace fs = std::filesystem;
@@ -165,13 +198,26 @@ namespace lapis {
 		return _obj;
 	}
 
-#ifdef LAPISGIS_PROJDB_IN_EXE_DIR
-	bool ProjContextByThread::set_proj_db_for_null_context = setProjDirectory(executableFilePath(), nullptr);
-	bool ProjContextByThread::set_proj_lib = _putenv(("PROJ_LIB="+executableFilePath()).c_str());
-	bool ProjContextByThread::set_proj_data = _putenv(("PROJ_DATA=" + executableFilePath()).c_str());
-#else
-	bool ProjContextByThread::set_proj_db_for_null_context = false;
-	bool ProjContextByThread::set_proj_lib = false;
-    bool ProjContextByThread::set_proj_data = false;
-#endif
+	bool isProjDirectorySet()
+	{
+		std::scoped_lock lock{ projDirectoryMutex };
+		return projDirInitialized;
+	}
+
+	std::string getProjDirectory()
+	{
+		std::scoped_lock lock{ projDirectoryMutex };
+		return projDirectory;
+	}
+
+	bool projDbExists()
+	{
+		std::scoped_lock lock{ projDirectoryMutex };
+		if (!projDirInitialized || projDirectory.empty()) {
+			return false;
+		}
+		namespace fs = std::filesystem;
+		fs::path dbPath = fs::path(projDirectory) / "proj.db";
+		return fs::exists(dbPath) && fs::is_regular_file(dbPath);
+	}
 }
