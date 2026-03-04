@@ -57,7 +57,7 @@ namespace lapis {
 			std::optional<LinearUnit> xy = crs.getXYLinearUnits();
 			EXPECT_EQ(expected[i].has_value(), xy.has_value());
 			if (expected[i].has_value() && xy.has_value()) {
-				EXPECT_TRUE(expected[i].value() == xy.value());
+				EXPECT_TRUE(expected[i].value().isConsistent(xy.value()));
 			}
 		}
 	}

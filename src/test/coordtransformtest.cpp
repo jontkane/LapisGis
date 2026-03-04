@@ -34,10 +34,10 @@ namespace lapis {
 
 	TEST_F(CoordTransformTest, noOp) {
 		std::vector<const CoordTransform*> noops = {
-            &CoordTransformFactory::getTransform(empty,empty),
+            &CoordTransformFactory::getTransform(empty, empty),
 			&CoordTransformFactory::getTransform(empty, stateplane),
 			&CoordTransformFactory::getTransform(utm, empty),
-			&CoordTransformFactory::getTransform(utm,utm)
+			&CoordTransformFactory::getTransform(utm, utm)
 		};
 		std::vector<xyz> exp = { {0,0,0},
 				{1000,1000,1000},

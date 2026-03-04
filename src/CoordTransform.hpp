@@ -79,8 +79,12 @@ namespace lapis {
 			return;
 		}
 		//the caching here kind of sucks; potentially a place to optimize if necessary
-		transformXY(points, startIdx);
-		_conv.convertManyInPlace(&points[startIdx].z, points.size() - startIdx, sizeof(T));
+		if (_needXYConv) {
+			transformXY(points, startIdx);
+		}
+		if (_needZConv) {
+			_conv.convertManyInPlace(&points[startIdx].z, points.size() - startIdx, sizeof(T));
+		}
 	}
 }
 
