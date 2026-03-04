@@ -60,7 +60,21 @@ namespace lapis {
 
         bool isConsistent(const SpecificUnit<TYPE>& other) const; //returns true if the conversion between these units is the identity, or within a rounding error of identity
         bool operator==(const SpecificUnit<TYPE>& other) const = default;
-	private:
+
+		template<UnitType OTHER_TYPE>
+			requires (OTHER_TYPE != TYPE)
+		double convertOneToThis(double value, const SpecificUnit<OTHER_TYPE>& sourceUnits) const = delete
+			template<UnitType OTHER_TYPE>
+			requires (OTHER_TYPE != TYPE)
+		double convertOneFromThis(double value, const SpecificUnit<OTHER_TYPE>&destUnits) const = delete;
+		template<UnitType OTHER_TYPE>
+			requires (OTHER_TYPE != TYPE)
+		double convertOneToThis(double value, const std::optional<SpecificUnit<OTHER_TYPE>>& sourceUnits) const = delete;
+		template<UnitType OTHER_TYPE>
+			requires (OTHER_TYPE != TYPE)
+		double convertOneFromThis(double value, const std::optional<SpecificUnit<OTHER_TYPE>>& destUnits) const = delete;
+		using Unit::convertOneToThis;
+		using Unit::convertOneFromThis;
 	};
 
     using LinearUnit = SpecificUnit<UnitType::linear>;

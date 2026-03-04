@@ -850,7 +850,7 @@ namespace lapis {
 		}
 		auto band = wgd->GetRasterBand(1);
 		band->SetNoDataValue((double)*navalue);
-		band->RasterIO(GF_Write, 0, 0, _ncol, _nrow, _data.value().data(), _ncol, _nrow, dataType, 0, 0);
+		band->RasterIO(GF_Write, 0, 0, _ncol, _nrow, _data.value().data(), _ncol, _nrow, GDT(), 0, 0);
 	}
 
 	template<class T>
