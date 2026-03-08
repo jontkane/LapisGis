@@ -63,8 +63,8 @@ namespace lapis {
 
 		template<UnitType OTHER_TYPE>
 			requires (OTHER_TYPE != TYPE)
-		double convertOneToThis(double value, const SpecificUnit<OTHER_TYPE>& sourceUnits) const = delete
-			template<UnitType OTHER_TYPE>
+		double convertOneToThis(double value, const SpecificUnit<OTHER_TYPE>& sourceUnits) const = delete;
+		template<UnitType OTHER_TYPE>
 			requires (OTHER_TYPE != TYPE)
 		double convertOneFromThis(double value, const SpecificUnit<OTHER_TYPE>&destUnits) const = delete;
 		template<UnitType OTHER_TYPE>
