@@ -12,9 +12,9 @@ namespace lapis {
 	}
 
 #ifdef LAPISGIS_CLEAR_GDAL_ENV
-    static bool gdalEnvCleared = clearGDALEnvironmentVariables();
+    bool gdalEnvCleared = clearGDALEnvironmentVariables();
 #else
-    static bool gdalEnvCleared = false;
+    bool gdalEnvCleared = false;
 #endif
 
 	void gdalAllRegisterThreadSafe()

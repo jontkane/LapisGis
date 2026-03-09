@@ -4,12 +4,12 @@
 
 namespace lapis {
 
-	static std::string projDirectory = "";
-	static std::mutex projDirectoryMutex;
+	std::string projDirectory = "";
+	std::mutex projDirectoryMutex;
 #ifdef LAPISGIS_PROJDB_IN_EXE_DIR
-	static bool projDirInitialized = setProjDefaultDirectory(executableFilePath());
+	bool projDirInitialized = setProjDefaultDirectory(executableFilePath());
 #else
-	static bool projDirInitialized = false;
+	bool projDirInitialized = false;
 #endif
 
 	std::string executableFilePath() {
