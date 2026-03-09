@@ -767,7 +767,10 @@ namespace lapis {
 
 		GDALRasterBand* rBand = wgd->GetRasterBand(band);
 		double naValue = rBand->GetNoDataValue();
-		rBand->RasterIO(GF_Read, 0, 0, _ncol, _nrow, _data.value().data(), _ncol, _nrow, GDT(), 0, 0);
+		CPLErr err = rBand->RasterIO(GF_Read, 0, 0, _ncol, _nrow, _data.value().data(), _ncol, _nrow, GDT(), 0, 0);
+		if (err > CE_Warning) {
+			throw InvalidRasterFileException("Error reading raster data from " + filename);
+        }
 
 		for (cell_t cell = 0; cell < ncell(); ++cell) {
 			double asDouble = (double)_data.value()[cell];
@@ -803,7 +806,10 @@ namespace lapis {
 		}
 		GDALRasterBand* rBand = wgd->GetRasterBand(band);
 		T naValue = (T)(rBand->GetNoDataValue());
-		rBand->RasterIO(GF_Read, rc.mincol, rc.minrow, _ncol, _nrow, _data.value().data(), _ncol, _nrow, GDT(), 0, 0);
+		CPLErr err = rBand->RasterIO(GF_Read, rc.mincol, rc.minrow, _ncol, _nrow, _data.value().data(), _ncol, _nrow, GDT(), 0, 0);
+		if (err > CE_Warning) {
+			throw InvalidRasterFileException("Error reading raster data from " + filename);
+		}
 		for (cell_t cell = 0; cell < ncell(); ++cell) {
 			double asDouble = _data.value()[cell];
 			if (asDouble != naValue && !(naValue < -2000000 && asDouble < -2000000) && !std::isnan(asDouble)) {
@@ -850,7 +856,10 @@ namespace lapis {
 		}
 		auto band = wgd->GetRasterBand(1);
 		band->SetNoDataValue((double)*navalue);
-		band->RasterIO(GF_Write, 0, 0, _ncol, _nrow, _data.value().data(), _ncol, _nrow, GDT(), 0, 0);
+		CPLErr err = band->RasterIO(GF_Write, 0, 0, _ncol, _nrow, _data.value().data(), _ncol, _nrow, GDT(), 0, 0);
+		if (err > CE_Warning) {
+			throw InvalidRasterFileException("Error writing raster data to " + file);
+        }
 	}
 
 	template<class T>

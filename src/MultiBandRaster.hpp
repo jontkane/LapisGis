@@ -200,7 +200,10 @@ namespace lapis {
 		for (band_t band = 0; band < nBands(); ++band) {
 			auto thisBand = ugd->GetRasterBand(band+1);
 			thisBand->SetNoDataValue((double)navalue);
-			thisBand->RasterIO(GF_Write, 0, 0, _ncol, _nrow, _bands[band]._data.value().data(), _ncol, _nrow, gdt, 0, 0);
+			CPLErr err = thisBand->RasterIO(GF_Write, 0, 0, _ncol, _nrow, _bands[band]._data.value().data(), _ncol, _nrow, gdt, 0, 0);
+			if (err > CE_Warning) {
+				throw std::runtime_error("Error writing raster data to " + fileName);
+            }
 		}
 	}
 	template<typename T>
