@@ -4,6 +4,19 @@
 
 
 namespace lapis {
+	bool clearGDALEnvironmentVariables()
+	{
+		_putenv("GDAL_DRIVER_PATH=");
+		_putenv("GDAL_SKIP=");
+		return true;
+	}
+
+#ifdef LAPISGIS_CLEAR_GDAL_ENV
+    static bool gdalEnvCleared = clearGDALEnvironmentVariables();
+#else
+    static bool gdalEnvCleared = false;
+#endif
+
 	void gdalAllRegisterThreadSafe()
 	{
 		static std::mutex mut;

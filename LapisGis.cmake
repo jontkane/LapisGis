@@ -13,8 +13,9 @@ function(copy_proj_db_after_build target)
             "$<TARGET_FILE_DIR:${target}>/proj.db"
         COMMENT "Copying proj.db to output directory for ${target}"
     )
-	target_compile_definitions(LapisGis PRIVATE LAPISGIS_PROJDB_IN_EXE_DIR)
 endfunction()
+
+option(LAPISGIS_CLEAR_GDAL_ENV "Clear GDAL environment variables on startup to prevent conflicts" ON)
 
 set(LAPISGIS_DIR ${CMAKE_CURRENT_LIST_DIR})
 
@@ -60,6 +61,13 @@ set(LAPISGIS_EXTERNAL_LINKS
 
 target_include_directories(LapisGis PRIVATE ${LAPISGIS_EXTERNAL_INCLUDES})
 target_precompile_headers(LapisGis PRIVATE ${LAPISGIS_DIR}/src/gis_pch.hpp)
+
+if(LAPISGIS_CLEAR_GDAL_ENV)
+    target_compile_definitions(LapisGis PRIVATE LAPISGIS_CLEAR_GDAL_ENV)
+endif()
+if(EXISTS "${PROJ_DB_PATH}")
+    target_compile_definitions(LapisGis PRIVATE LAPISGIS_PROJDB_IN_EXE_DIR)
+endif()
 
 set(LAPISGIS_INCLUDES
 	${LAPISGIS_EXTERNAL_INCLUDES}

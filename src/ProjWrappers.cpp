@@ -154,6 +154,7 @@ namespace lapis {
 		}
         _putenv(("PROJ_LIB=" + folder).c_str());
         _putenv(("PROJ_DATA=" + folder).c_str());
+        _putenv("PROJ_NETWORK=OFF");
 		setProjDirectory(folder, nullptr);
 
         projDirInitialized = true;
