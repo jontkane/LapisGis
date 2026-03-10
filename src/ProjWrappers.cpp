@@ -4,23 +4,17 @@
 
 namespace lapis {
 
-	std::string projDirectory = "";
-	std::mutex projDirectoryMutex;
-#ifdef LAPISGIS_PROJDB_IN_EXE_DIR
-	bool projDirInitialized = setProjDefaultDirectory(executableFilePath());
-#else
-	bool projDirInitialized = false;
-#endif
-
-	std::string executableFilePath() {
-		int length = wai_getExecutablePath(nullptr, 0, nullptr);
-		std::vector<char> path;
-		path.resize((size_t)length + 1);
-		wai_getExecutablePath(path.data(), length, nullptr);
-		path[length] = '\0';
-		std::string asString{ path.begin(),path.end() };
-		std::filesystem::path asPath{ asString };
-		return asPath.parent_path().string();
+	static std::string& projDirectoryInternal() {
+		static std::string projDirectory = "";
+        return projDirectory;
+	}
+	static std::mutex& projDirectoryMutexInternal() {
+		static std::mutex projDirectoryMutex;
+		return projDirectoryMutex;
+    }
+	static bool& projDirInitializedInternal() {
+		static bool projDirInitialized = false;
+		return projDirInitialized;
 	}
 
 	PJ_CONTEXT* ProjContextByThread::get()
@@ -31,8 +25,8 @@ namespace lapis {
 		if (!_ctxs.count(thisthread)) {
 			_ctxs.emplace(thisthread, getNewPJContext());
 
-			if (projDirInitialized) {
-                setProjDirectory(projDirectory, _ctxs.at(thisthread).get());
+			if (projDirInitializedInternal()) {
+                setProjDirectory(projDirectoryInternal(), _ctxs.at(thisthread).get());
 			}
 		}
 		return _ctxs.at(thisthread).get();
@@ -140,7 +134,7 @@ namespace lapis {
 	bool setProjDefaultDirectory(const std::string& path)
 	{
 		namespace fs = std::filesystem;
-        std::scoped_lock lock{ projDirectoryMutex };
+        std::scoped_lock lock{ projDirectoryMutexInternal()};
         std::string folder;
         if (!fs::is_directory(path)) {
 			folder = fs::path(path).parent_path().string();
@@ -148,16 +142,13 @@ namespace lapis {
 		else {
 			folder = path;
 		}
-        projDirectory = folder;
+        projDirectoryInternal() = folder;
 		if (folder.empty()) {
 			return false;
 		}
-        _putenv(("PROJ_LIB=" + folder).c_str());
-        _putenv(("PROJ_DATA=" + folder).c_str());
-        _putenv("PROJ_NETWORK=OFF");
 		setProjDirectory(folder, nullptr);
 
-        projDirInitialized = true;
+        projDirInitializedInternal() = true;
 
 		return true;
 	}
@@ -173,6 +164,10 @@ namespace lapis {
 			folder = path;
 		}
 		char* data = folder.data();
+#ifdef WIN32
+        _putenv_s("PROJ_LIB", data);
+		_putenv_s("PROJ_DATA", data);
+#endif
 		proj_context_set_search_paths(context, 1, &data);
 
 		return true;
@@ -201,24 +196,24 @@ namespace lapis {
 
 	bool isProjDirectorySet()
 	{
-		std::scoped_lock lock{ projDirectoryMutex };
-		return projDirInitialized;
+		std::scoped_lock lock{ projDirectoryMutexInternal()};
+		return projDirInitializedInternal();
 	}
 
 	std::string getProjDirectory()
 	{
-		std::scoped_lock lock{ projDirectoryMutex };
-		return projDirectory;
+		std::scoped_lock lock{ projDirectoryMutexInternal()};
+		return projDirectoryInternal();
 	}
 
 	bool projDbExists()
 	{
-		std::scoped_lock lock{ projDirectoryMutex };
-		if (!projDirInitialized || projDirectory.empty()) {
+		std::scoped_lock lock{ projDirectoryMutexInternal()};
+		if (!projDirInitializedInternal() || projDirectoryInternal().empty()) {
 			return false;
 		}
 		namespace fs = std::filesystem;
-		fs::path dbPath = fs::path(projDirectory) / "proj.db";
+		fs::path dbPath = fs::path(projDirectoryInternal()) / "proj.db";
 		return fs::exists(dbPath) && fs::is_regular_file(dbPath);
 	}
 }

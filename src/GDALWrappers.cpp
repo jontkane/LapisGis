@@ -4,18 +4,6 @@
 
 
 namespace lapis {
-	bool clearGDALEnvironmentVariables()
-	{
-		_putenv("GDAL_DRIVER_PATH=");
-		_putenv("GDAL_SKIP=");
-		return true;
-	}
-
-#ifdef LAPISGIS_CLEAR_GDAL_ENV
-    bool gdalEnvCleared = clearGDALEnvironmentVariables();
-#else
-    bool gdalEnvCleared = false;
-#endif
 
 	void gdalAllRegisterThreadSafe()
 	{
