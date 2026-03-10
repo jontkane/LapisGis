@@ -8,8 +8,6 @@
 
 namespace lapis {
 
-	std::string executableFilePath();
-
 	using SharedPJ = std::shared_ptr<PJ>;
 	SharedPJ makeSharedPJ(PJ* pj);
 
