@@ -1,3 +1,7 @@
+#pragma once
+#ifndef LAPIS_GIS_HPP
+#define LAPIS_GIS_HPP
+
 #include"Alignment.hpp"
 #include"Coordinate.hpp"
 #include"CoordRef.hpp"
@@ -28,3 +32,5 @@ namespace lapis {
     //Also tells proj where to find proj.db. If you pass the empty string, it will try to find proj.db in the same folder as the executable. If you pass a path, it will look for proj.db in that path.
     bool lapisGisInit(const std::string& projDbPath = "");
 }
+
+#endif
