@@ -12,9 +12,9 @@ target_include_directories(LapisGis_test PRIVATE ${GTEST_INCLUDE_DIRS})
 target_link_libraries(LapisGis_test PRIVATE ${GTEST_BOTH_LIBRARIES})
 copy_proj_db_after_build(LapisGis_test)
 
-
 if (MSVC)
 	target_compile_options(LapisGis_test PRIVATE /W3 /WX)
 else()
 	target_compile_options(LapisGis_test PRIVATE -Wall -Wextra -Werror)
 endif()
+
