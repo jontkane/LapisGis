@@ -57,13 +57,23 @@ namespace lapis {
     }
     std::unique_ptr<OGRPoint> Point::gdalGeometry() const
     {
-        std::unique_ptr<OGRPoint> gdalPoint = std::make_unique<OGRPoint>(_point.x, _point.y);
+        std::unique_ptr<OGRPoint> gdalPoint = gdalGeometryNoCrs();
         gdalPoint->assignSpatialReference(_crs.gdalSpatialRef());
+        return gdalPoint;
+    }
+    std::unique_ptr<OGRPoint> Point::gdalGeometryNoCrs() const
+    {
+        std::unique_ptr<OGRPoint> gdalPoint = std::make_unique<OGRPoint>(_point.x, _point.y);
         return gdalPoint;
     }
     std::unique_ptr<OGRGeometry> Point::gdalGeometryGeneric() const
     {
         std::unique_ptr<OGRPoint> gdalPoint = gdalGeometry();
+        return std::unique_ptr<OGRGeometry>(dynamic_cast<OGRGeometry*>(gdalPoint.release()));
+    }
+    std::unique_ptr<OGRGeometry> Point::gdalGeometryGenericNoCrs() const
+    {
+        std::unique_ptr<OGRPoint> gdalPoint = gdalGeometryNoCrs();
         return std::unique_ptr<OGRGeometry>(dynamic_cast<OGRGeometry*>(gdalPoint.release()));
     }
     coord_t Point::x() const
@@ -165,6 +175,12 @@ namespace lapis {
     }
     std::unique_ptr<OGRPolygon> Polygon::gdalGeometry() const
     {
+        std::unique_ptr<OGRPolygon> gdalPolygon = gdalGeometryNoCrs();
+        gdalPolygon->assignSpatialReference(_crs.gdalSpatialRef());
+        return gdalPolygon;
+    }
+    std::unique_ptr<OGRPolygon> Polygon::gdalGeometryNoCrs() const
+    {
         std::unique_ptr<OGRPolygon> gdalPolygon = std::make_unique<OGRPolygon>();
         OGRLinearRing* gdalOuterRing = new OGRLinearRing();
         for (const CoordXY& xy : _outerRing) {
@@ -181,12 +197,15 @@ namespace lapis {
             gdalInnerRing->closeRings();
             gdalPolygon->addRingDirectly(gdalInnerRing);
         }
-        gdalPolygon->assignSpatialReference(_crs.gdalSpatialRef());
         return gdalPolygon;
     }
     std::unique_ptr<OGRGeometry> Polygon::gdalGeometryGeneric() const
     {
         return std::unique_ptr<OGRGeometry>(dynamic_cast<OGRGeometry*>(gdalGeometry().release()));
+    }
+    std::unique_ptr<OGRGeometry> Polygon::gdalGeometryGenericNoCrs() const
+    {
+        return std::unique_ptr<OGRGeometry>(dynamic_cast<OGRGeometry*>(gdalGeometryNoCrs().release()));
     }
     void Polygon::addInnerRing(const std::vector<CoordXY>& innerRing)
     {
@@ -508,16 +527,25 @@ namespace lapis {
     }
     std::unique_ptr<OGRMultiPolygon> MultiPolygon::gdalGeometry() const
     {
+        std::unique_ptr<OGRMultiPolygon> gdalMultiPolygon = gdalGeometryNoCrs();
+        gdalMultiPolygon->assignSpatialReference(_crs.gdalSpatialRef());
+        return gdalMultiPolygon;
+    }
+    std::unique_ptr<OGRMultiPolygon> MultiPolygon::gdalGeometryNoCrs() const
+    {
         std::unique_ptr<OGRMultiPolygon> gdalMultiPolygon = std::make_unique<OGRMultiPolygon>();
         for (const Polygon& poly : _polygons) {
             gdalMultiPolygon->addGeometry(poly.gdalGeometry().get());
         }
-        gdalMultiPolygon->assignSpatialReference(_crs.gdalSpatialRef());
         return gdalMultiPolygon;
     }
     std::unique_ptr<OGRGeometry> MultiPolygon::gdalGeometryGeneric() const
     {
         return std::unique_ptr<OGRGeometry>(dynamic_cast<OGRGeometry*>(gdalGeometry().release()));
+    }
+    std::unique_ptr<OGRGeometry> MultiPolygon::gdalGeometryGenericNoCrs() const
+    {
+        return std::unique_ptr<OGRGeometry>(dynamic_cast<OGRGeometry*>(gdalGeometryNoCrs().release()));
     }
     void MultiPolygon::addPolygon(const Polygon& polygon)
     {

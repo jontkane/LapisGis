@@ -156,7 +156,7 @@ namespace lapis {
 		}
 	}
 
-	std::array<double, 6> Extent::getGeoTrans(UniqueGdalDataset& wgd, const std::string& errormsg) {
+	std::array<double, 6> Extent::getGeoTrans(const UniqueGdalDataset& wgd, const std::string& errormsg) {
 		std::array<double, 6> gt{}; //xmin, xres, xshear, ymax, yshear, yres
 		auto errcode = wgd->GetGeoTransform(gt.data());
 		if (errcode != CE_None) {
@@ -165,7 +165,7 @@ namespace lapis {
 		return gt;
 	}
 
-	void Extent::extentInitFromGDALRaster(UniqueGdalDataset& wgd, const std::array<double, 6>& geotrans) {
+	void Extent::extentInitFromGDALRaster(const UniqueGdalDataset& wgd, const std::array<double, 6>& geotrans) {
 		//xmin, xres, xshear, ymax, yshear, yres
 		int ncol = wgd->GetRasterXSize();
 		int nrow = wgd->GetRasterYSize();

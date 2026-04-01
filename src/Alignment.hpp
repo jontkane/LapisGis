@@ -44,6 +44,9 @@ namespace lapis {
 		//Constructor from a raster file
 		Alignment(const std::string& filename);
 
+		//Constructor from GDALDataset
+        Alignment(const UniqueGdalDataset& ugd);
+
 		Alignment(const Alignment&) = default;
 
 		//just virtual declaring the destructor
@@ -203,7 +206,7 @@ namespace lapis {
 		rowcol_t _nrow, _ncol;
 
 		void checkValidAlignment();
-		void alignmentInitFromGDALRaster(UniqueGdalDataset& wgd, const std::array<double, 6>& geotrans);
+		void alignmentInitFromGDALRaster(const UniqueGdalDataset& wgd, const std::array<double, 6>& geotrans);
 
 		//These functions just throw if the given values are outside the bounds of the alignment
 		void _checkX(const coord_t x) const {

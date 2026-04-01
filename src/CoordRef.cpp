@@ -303,10 +303,19 @@ namespace lapis {
 
 	OGRSpatialReference* CoordRef::gdalSpatialRef() const
 	{
-		if (!_asGdal && !isEmpty()) {
-			_asGdal = ogrSpatialRefFromWkt(getCompleteWKT());
+		if (!_p) {
+			return nullptr;
 		}
-		return _asGdal.get();
+		if (_gdalCache->spatialRef) {
+            return _gdalCache->spatialRef.get();
+		}
+        std::scoped_lock lock{ _gdalCache->mut };
+		if (_gdalCache->spatialRef) {
+			return _gdalCache->spatialRef.get();
+        }
+        std::string wkt = getCompleteWKT();
+		_gdalCache->spatialRef = ogrSpatialRefFromWkt(wkt);
+        return _gdalCache->spatialRef.get();
 	}
 
 	size_t CoordRef::hash() const

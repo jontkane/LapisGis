@@ -94,7 +94,12 @@ namespace lapis {
 		LinearUnit _inferZUnits();
 		void _updateCache() const;
 
-		mutable SharedOGRSpatialRef _asGdal = nullptr;
+
+		struct GdalCache {
+			mutable std::mutex mut;
+            mutable SharedOGRSpatialRef spatialRef = nullptr;
+		};
+        mutable std::shared_ptr<GdalCache> _gdalCache = std::make_shared<GdalCache>();
 
 		struct HashCache {
 			mutable bool valid = false;

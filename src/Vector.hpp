@@ -711,7 +711,7 @@ namespace lapis {
 					break;
 				}
 			}
-			std::unique_ptr<OGRGeometry> geometry = feature.getGeometry().gdalGeometryGeneric();
+			std::unique_ptr<OGRGeometry> geometry = feature.getGeometry().gdalGeometryGenericNoCrs();
 			gdalFeature->SetGeometry(geometry.get());
 			layer->CreateFeature(gdalFeature.get());
 		}

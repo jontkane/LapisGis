@@ -22,6 +22,7 @@ namespace lapis {
 		virtual OGRwkbGeometryType gdalGeometryType() const;
 
 		virtual std::unique_ptr<OGRGeometry> gdalGeometryGeneric() const = 0;
+		virtual std::unique_ptr<OGRGeometry> gdalGeometryGenericNoCrs() const = 0;
 
 		virtual Extent boundingBox() const = 0;
 
@@ -58,7 +59,9 @@ namespace lapis {
 
 		OGRwkbGeometryType gdalGeometryType() const override;
 		std::unique_ptr<OGRPoint> gdalGeometry() const;
+        std::unique_ptr<OGRPoint> gdalGeometryNoCrs() const;
 		std::unique_ptr<OGRGeometry> gdalGeometryGeneric() const override;
+        std::unique_ptr<OGRGeometry> gdalGeometryGenericNoCrs() const override;
 
 		coord_t x() const;
 		coord_t y() const;
@@ -89,7 +92,9 @@ namespace lapis {
 
 		OGRwkbGeometryType gdalGeometryType() const override;
 		std::unique_ptr<OGRPolygon> gdalGeometry() const;
+        std::unique_ptr<OGRPolygon>	gdalGeometryNoCrs() const;
 		std::unique_ptr<OGRGeometry> gdalGeometryGeneric() const override;
+        std::unique_ptr<OGRGeometry> gdalGeometryGenericNoCrs() const override;
 
 		void addInnerRing(const std::vector<CoordXY>& innerRing);
 
@@ -134,7 +139,9 @@ namespace lapis {
 
 		OGRwkbGeometryType gdalGeometryType() const override;
 		std::unique_ptr<OGRMultiPolygon> gdalGeometry() const;
+        std::unique_ptr<OGRMultiPolygon> gdalGeometryNoCrs() const;
 		std::unique_ptr<OGRGeometry> gdalGeometryGeneric() const override;
+        std::unique_ptr<OGRGeometry> gdalGeometryGenericNoCrs() const override;
 
 		std::vector<Polygon>::iterator begin();
 		std::vector<Polygon>::iterator end();

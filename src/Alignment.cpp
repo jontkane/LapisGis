@@ -43,6 +43,14 @@ namespace lapis {
 		checkValidAlignment();
 	}
 
+	Alignment::Alignment(const UniqueGdalDataset& ugd) {
+		if (!ugd) {
+			throw InvalidRasterFileException("Null dataset pointer in Alignment constructor");
+		}
+		alignmentInitFromGDALRaster(ugd, getGeoTrans(ugd, "could not read geotransform from GDALDataset"));
+		checkValidAlignment();
+    }
+
 	Extent Alignment::alignExtent(const Extent& e, const SnapType snap) const {
 		if (!_crs.isConsistentHoriz(e.crs())) {
 			throw CRSMismatchException("CRS mismatch in alignExtent");
@@ -201,7 +209,7 @@ namespace lapis {
 		}
 	}
 
-	void Alignment::alignmentInitFromGDALRaster(UniqueGdalDataset& wgd, const std::array<double, 6>& geotrans) {
+	void Alignment::alignmentInitFromGDALRaster(const UniqueGdalDataset& wgd, const std::array<double, 6>& geotrans) {
 		//xmin, xres, xshear, ymax, yshear, yres
 		extentInitFromGDALRaster(wgd, geotrans);
 		_ncol = wgd->GetRasterXSize();

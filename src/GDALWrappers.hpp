@@ -11,8 +11,6 @@
 
 namespace lapis {
 
-	bool clearGDALEnvironmentVariables();
-
 	void gdalAllRegisterThreadSafe();
 
 	using UniqueGdalDataset = std::unique_ptr<GDALDataset, void(*)(GDALDataset*)>;
