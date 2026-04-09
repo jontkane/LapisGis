@@ -27,5 +27,9 @@ namespace lapis {
 	{
 		return _nPoints - _currentPoint;
 	}
+	bool CurrentLasPoint::hasMorePoints() const
+	{
+		return nPointsRemaining() > 0;
+	}
 
 }

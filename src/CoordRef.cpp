@@ -34,6 +34,7 @@ namespace lapis {
 	{
 		if (s) {
 			_crsFromString(std::string(s));
+            _zUnits = _inferZUnits();
 		}
 	}
 

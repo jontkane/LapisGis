@@ -25,6 +25,11 @@ namespace lapis {
 		template<class T>
 		void transformXYZ(std::vector<T>& points, size_t startIdx = 0) const;
 
+		template<class T>
+        void transformXYGeneric(size_t count, T* x, size_t xSpan, T* y, size_t ySpan) const;
+		template<class T>
+        void transformXYZGeneric(size_t count, T* x, size_t xSpan, T* y, size_t ySpan, T* z, size_t zSpan) const;
+
 		CoordXY transformSingleXY(coord_t x, coord_t y) const;
 
 		const CoordRef& src() const;
@@ -86,6 +91,39 @@ namespace lapis {
 			_conv.convertManyInPlace(&points[startIdx].z, points.size() - startIdx, sizeof(T));
 		}
 	}
+	template<class T>
+	inline void CoordTransform::transformXYGeneric(size_t count, T* x, size_t xSpan, T* y, size_t ySpan) const
+	{
+		if (!count) {
+			return;
+        }
+		if (!_tr) {
+			return;
+		}
+		if (_needXYConv) {
+			proj_trans_generic(_tr.get(), PJ_FWD,
+				x, xSpan, count,
+				y, ySpan, count,
+				nullptr, 0, 0,
+                nullptr, 0, 0);
+		}
+	}
+	template<class T>
+	inline void CoordTransform::transformXYZGeneric(size_t count, T* x, size_t xSpan, T* y, size_t ySpan, T* z, size_t zSpan) const
+	{
+		if (!count) {
+			return;
+		}
+		if (!_tr) {
+			return;
+		}
+		if (_needXYConv) {
+			transformXYGeneric(count, x, xSpan, y, ySpan);
+		}
+		if (_needZConv) {
+			_conv.convertManyInPlace(z, count, zSpan);
+		}
+    }
 }
 
 #endif

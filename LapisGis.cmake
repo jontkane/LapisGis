@@ -59,7 +59,8 @@ set(LAPISGIS_EXTERNAL_LINKS
 	whereami
 	)
 
-target_include_directories(LapisGis PRIVATE ${LAPISGIS_EXTERNAL_INCLUDES})
+target_include_directories(LapisGis PUBLIC ${LAPISGIS_EXTERNAL_INCLUDES})
+target_link_libraries(LapisGis PUBLIC ${LAPISGIS_EXTERNAL_LINKS})
 target_precompile_headers(LapisGis PRIVATE ${LAPISGIS_DIR}/src/gis_pch.hpp)
 
 if(LAPISGIS_AUTO_INIT)

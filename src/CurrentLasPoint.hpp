@@ -102,6 +102,7 @@ namespace lapis {
 
 			size_t nPoints() const;
 			size_t nPointsRemaining() const;
+            bool hasMorePoints() const;
 
 		protected:
 			size_t _currentPoint = 0;

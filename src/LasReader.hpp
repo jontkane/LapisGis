@@ -48,6 +48,8 @@ namespace lapis {
 		//The capacity of the returned vector may be as high as n but will never exceed it
 		LidarPointVector getPoints(size_t n);
 
+		void reset();
+
 	private:
 		std::vector<std::shared_ptr<LasFilter>> _filters;
 		std::string _filename;

@@ -68,4 +68,11 @@ namespace lapis {
 	{
 		return _filename;
 	}
+
+	void LasReader::reset()
+	{
+		auto filters = std::move(_filters);
+        *this = LasReader(_filename);
+        _filters = std::move(filters);
+	}
 }
