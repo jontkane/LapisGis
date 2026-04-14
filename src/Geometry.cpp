@@ -9,6 +9,13 @@ namespace lapis {
     {
         return OGRwkbGeometryType::wkbUnknown;
     }
+    const Extent& Geometry::boundingBox() const
+    {
+        if (!_boundingBoxCache.has_value()) {
+            _cacheBoundingBox();
+        }
+        return _boundingBoxCache.value();
+    }
     const CoordRef& Geometry::crs() const
     {
         return _crs;
@@ -16,12 +23,18 @@ namespace lapis {
     void Geometry::setCrs(const CoordRef& crs)
     {
         _crs = crs;
+        _invalidateBBCache();
     }
 
     void Geometry::projectInPlace(const CoordRef& newCrs)
     {
         const CoordTransform& transform = CoordTransformFactory::getTransform(_crs, newCrs);
         projectInPlace(transform);
+        _invalidateBBCache();
+    }
+    void Geometry::_invalidateBBCache() const
+    {
+        _boundingBoxCache.reset();
     }
     Point::Point(const OGRGeometry& geom)
     {
@@ -85,15 +98,11 @@ namespace lapis {
         return _point.y;
     }
 
-    Extent Point::boundingBox() const
-    {
-        return Extent(x(), x(), y(), y(), _crs);
-    }
-
     void Point::projectInPlace(const CoordTransform& transform)
     {
         _point = transform.transformSingleXY(_point.x, _point.y);
         _crs = transform.dst();
+        _invalidateBBCache();
     }
 
     bool Point::overlapsExtent(const Extent& e) const
@@ -120,6 +129,11 @@ namespace lapis {
         }
         const OGRPoint* gdalPoint = geom.toPoint();
         _point = CoordXY{ gdalPoint->getX(), gdalPoint->getY() };
+    }
+
+    void Point::_cacheBoundingBox() const
+    {
+        _boundingBoxCache = Extent{ _point.x, _point.x, _point.y, _point.y, _crs };
     }
 
 
@@ -233,20 +247,6 @@ namespace lapis {
     {
         return _innerRings[index];
     }
-    Extent Polygon::boundingBox() const
-    {
-        coord_t xmin = std::numeric_limits<coord_t>::max();
-        coord_t xmax = std::numeric_limits<coord_t>::lowest();
-        coord_t ymin = std::numeric_limits<coord_t>::max();
-        coord_t ymax = std::numeric_limits<coord_t>::lowest();
-        for (const CoordXY& xy : _outerRing) {
-            if (xy.x < xmin) xmin = xy.x;
-            if (xy.x > xmax) xmax = xy.x;
-            if (xy.y < ymin) ymin = xy.y;
-            if (xy.y > ymax) ymax = xy.y;
-        }
-        return Extent{ xmin, xmax, ymin, ymax, _crs };
-    }
     bool Polygon::containsPoint(coord_t x, coord_t y) const
     {
         auto pointInRing = [](const std::vector<CoordXY>& ring, coord_t x, coord_t y) {
@@ -311,6 +311,21 @@ namespace lapis {
         }
     }
 
+    void Polygon::_cacheBoundingBox() const
+    {
+        coord_t xmin = std::numeric_limits<coord_t>::max();
+        coord_t xmax = std::numeric_limits<coord_t>::lowest();
+        coord_t ymin = std::numeric_limits<coord_t>::max();
+        coord_t ymax = std::numeric_limits<coord_t>::lowest();
+        for (const CoordXY& xy : _outerRing) {
+            if (xy.x < xmin) xmin = xy.x;
+            if (xy.x > xmax) xmax = xy.x;
+            if (xy.y < ymin) ymin = xy.y;
+            if (xy.y > ymax) ymax = xy.y;
+        }
+        _boundingBoxCache = Extent{ xmin, xmax, ymin, ymax, _crs };
+    }
+
     void Polygon::projectInPlace(const CoordTransform& transform)
     {
         transform.transformXY(_outerRing);
@@ -318,6 +333,7 @@ namespace lapis {
             transform.transformXY(innerRing);
         }
         setCrs(transform.dst());
+        _invalidateBBCache();
     }
 
     bool Polygon::overlapsExtent(const Extent& e) const
@@ -553,6 +569,7 @@ namespace lapis {
             throw CRSMismatchException("Polygon CRS does not match MultiPolygon CRS");
         }
         _polygons.push_back(polygon);
+        _invalidateBBCache();
     }
     std::vector<Polygon>::iterator MultiPolygon::begin() {
         return _polygons.begin();
@@ -567,17 +584,6 @@ namespace lapis {
     std::vector<Polygon>::const_iterator MultiPolygon::end() const
     {
         return _polygons.end();
-    }
-    Extent MultiPolygon::boundingBox() const
-    {
-        if (!_polygons.size()) {
-            return Extent{ 0, 0, 0, 0, _crs };
-        }
-        Extent out = _polygons[0].boundingBox();
-        for (size_t i = 1; i < _polygons.size(); i++) {
-            out = extendExtent(out, _polygons[i].boundingBox());
-        }
-        return out;
     }
     bool MultiPolygon::containsPoint(coord_t x, coord_t y) const
     {
@@ -610,6 +616,7 @@ namespace lapis {
             poly.projectInPlace(transform);
         }
         setCrs(transform.dst());
+        _invalidateBBCache();
     }
     bool MultiPolygon::overlapsExtent(const Extent& e) const
     {
@@ -628,6 +635,17 @@ namespace lapis {
             }
         }
         return false;
+    }
+    void MultiPolygon::_cacheBoundingBox() const
+    {
+        if (!_polygons.size()) {
+            _boundingBoxCache = Extent{ 0, 0, 0, 0, _crs };
+        }
+        Extent out = _polygons[0].boundingBox();
+        for (size_t i = 1; i < _polygons.size(); i++) {
+            out = extendExtent(out, _polygons[i].boundingBox());
+        }
+        _boundingBoxCache = out;
     }
     void MultiPolygon::_sharedConstructorFromGdal(const OGRGeometry& geom, const CoordRef& crs)
     {

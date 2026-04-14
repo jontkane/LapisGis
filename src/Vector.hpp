@@ -207,6 +207,7 @@ namespace lapis {
 		void addFeatureUnsafe(const ConstFeature<GEOM>& feature);
 
 		const CoordRef& crs() const;
+        void defineCrs(const CoordRef& crs);
 		const Extent& extent() const;
 		size_t nFeature() const;
 
@@ -838,6 +839,14 @@ namespace lapis {
 	inline const CoordRef& VectorDataset<GEOM>::crs() const
 	{
 		return _crs;
+	}
+	template<class GEOM>
+	inline void VectorDataset<GEOM>::defineCrs(const CoordRef& crs)
+	{
+        _crs = crs;
+		for (GEOM& geometry : _geometries) {
+			geometry.setCrs(crs);
+        }
 	}
     template<class GEOM>
 	inline const Extent& VectorDataset<GEOM>::extent() const

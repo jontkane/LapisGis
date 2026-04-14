@@ -1626,6 +1626,50 @@ namespace lapis {
 		}
 		return outMeans;
     }
+
+	//azimuth and elevation should both be in degrees
+	template<class T>
+	inline Raster<T> hillshadeVisualization(const Raster<T>& r, double azimuth, double elevation) {
+		azimuth = (360 - azimuth + 90) * M_PI / 180.0;
+		elevation = (90 - elevation) * M_PI / 180.0;
+
+		Raster<T> hillshade((Alignment)r);
+		for (rowcol_t col = 0; col < r.ncol(); ++col) {
+			rowcol_t colleft = std::max(col - 1, 0);
+			rowcol_t colright = std::min(col + 1, r.ncol() - 1);
+            if (colleft < 0 || colright >= r.ncol()) {
+				continue;
+			}
+			for (rowcol_t row = 0; row < r.nrow(); ++row) {
+				if (row == 0 || row == r.nrow() - 1) {
+					continue;
+                }
+				if (!r.atRCUnsafe(row, col).has_value()) {
+					continue;
+				}
+				rowcol_t rowabove = std::max(row - 1, 0);
+				rowcol_t rowbelow = std::min(row + 1, r.nrow() - 1);
+				if (!r.atRCUnsafe(rowabove, col).has_value() ||
+					!r.atRCUnsafe(rowbelow, col).has_value() ||
+					!r.atRCUnsafe(row, colleft).has_value() ||
+					!r.atRCUnsafe(row, colright).has_value()
+					) {
+					continue;
+				}
+
+				double slopeX = (r.atRCUnsafe(row, colright).value() - r.atRCUnsafe(row, colleft).value()) / (2.0 * r.xres());
+				double slopeY = (r.atRCUnsafe(rowbelow, col).value() - r.atRCUnsafe(rowabove, col).value()) / (2.0 * r.yres());
+
+				double aspect = std::atan2(slopeY, slopeX);
+				double slopeMagnitude = std::atan(std::sqrt(slopeX * slopeX + slopeY * slopeY));
+                double hillshadeValue = 255.0 * (std::cos(elevation) * std::cos(slopeMagnitude) + std::sin(elevation) * std::sin(slopeMagnitude) * std::cos(azimuth - aspect));
+				hillshadeValue = std::max(hillshadeValue, 0.0);
+                hillshade.atRCUnsafe(row, col).value() = static_cast<T>(hillshadeValue);
+				hillshade.atRCUnsafe(row, col).has_value() = true;
+			}
+		}
+		return hillshade;
+	}
 }
 
 #endif

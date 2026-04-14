@@ -3,6 +3,7 @@
 #define lp_lasheader_h
 
 #include"CurrentLasPoint.hpp"
+#include"Geometry.hpp"
 
 namespace lapis {
 
@@ -135,14 +136,46 @@ namespace lapis {
 	//this filter assumes that the extent matches the LasReader's crs
 	class LasFilterExtent : public LasFilter {
 	public:
-		LasFilterExtent(const Extent& e): _e(e) {
-			priority = lasfilterpriority::mid;
+		LasFilterExtent(const Extent& e) : _e(e) {
+			priority = lasfilterpriority::high;
 		}
 		bool isFiltered(const CurrentLasPoint& p) override {
 			return !(_e.contains(p.x(), p.y()));
 		}
 	private:
 		Extent _e;
+	};
+
+	//this filter assumes that the geometry matches the LasReader's crs
+	class LasFilterPolygon : public LasFilter {
+	public:
+		LasFilterPolygon(const Polygon& g) : _p(g) {
+			priority = lasfilterpriority::high;
+        }
+		bool isFiltered(const CurrentLasPoint& p) override {
+			if (!_p.boundingBox().contains(p.x(), p.y())) {
+				return true;
+            }
+            return !_p.containsPoint(p.x(), p.y());
+		}
+	private:
+		Polygon _p;
+	};
+
+    //this filter assumes that the geometry matches the LasReader's crs
+	class LasFilterMultiPolygon : public LasFilter {
+	public:
+		LasFilterMultiPolygon(const MultiPolygon& g) : _p(g) {
+			priority = lasfilterpriority::high;
+        }
+		bool isFiltered(const CurrentLasPoint& p) override {
+			if (!_p.boundingBox().contains(p.x(), p.y())) {
+				return true;
+			}
+			return !_p.containsPoint(p.x(), p.y());
+        }
+	private:
+		MultiPolygon _p;
 	};
 }
 

@@ -87,7 +87,7 @@ namespace lapis {
 		const auto atRC(const rowcol_t row, const rowcol_t col) const {
 			return (*this)[cellFromRowCol(row, col)];
 		}
-		const auto& atXY(const coord_t x, const coord_t y) const {
+		const auto atXY(const coord_t x, const coord_t y) const {
 			return (*this)[cellFromXY(x, y)];
 		}
 

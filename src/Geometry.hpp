@@ -24,7 +24,7 @@ namespace lapis {
 		virtual std::unique_ptr<OGRGeometry> gdalGeometryGeneric() const = 0;
 		virtual std::unique_ptr<OGRGeometry> gdalGeometryGenericNoCrs() const = 0;
 
-		virtual Extent boundingBox() const = 0;
+		const Extent& boundingBox() const;
 
 		const CoordRef& crs() const;
 		void setCrs(const CoordRef& crs);
@@ -43,6 +43,10 @@ namespace lapis {
 		CoordRef _crs;
 		Geometry() = default;
 		Geometry(const Geometry&) = default;
+		
+		mutable std::optional<Extent> _boundingBoxCache = std::nullopt;
+		virtual void _cacheBoundingBox() const = 0;
+		void _invalidateBBCache() const;
 	};
 	class Point : public Geometry {
 	public:
@@ -66,13 +70,13 @@ namespace lapis {
 		coord_t x() const;
 		coord_t y() const;
 
-		Extent boundingBox() const override;
-
         using Geometry::projectInPlace;
         void projectInPlace(const CoordTransform& transform) override;
 
         bool overlapsExtent(const Extent& e) const override;
         bool overlapsExtentSameCrs(const Extent& e) const override;
+	protected:
+		void _cacheBoundingBox() const override;
 	private:
 		CoordXY _point;
 		void _sharedConstructorFromGdal(const OGRGeometry& geom);
@@ -103,8 +107,6 @@ namespace lapis {
 		const std::vector<CoordXY>& getInnerRing(int index) const;
 		const std::vector<CoordXY>& getInnerRingUnsafe(int index) const;
 		
-
-		Extent boundingBox() const override;
 		bool containsPoint(coord_t x, coord_t y) const;
 		bool containsPoint(CoordXY xy) const;
 		bool containsPoint(Point p) const;
@@ -116,6 +118,8 @@ namespace lapis {
 
 		bool overlapsExtent(const Extent& e) const override;
 		bool overlapsExtentSameCrs(const Extent& e) const override;
+	protected:
+		void _cacheBoundingBox() const override;
 	private:
 		std::vector<CoordXY> _outerRing;
         std::vector<std::vector<CoordXY>> _innerRings;
@@ -150,7 +154,6 @@ namespace lapis {
 
 		void addPolygon(const Polygon& polygon);
 
-		Extent boundingBox() const override;
 		bool containsPoint(coord_t x, coord_t y) const;
 		bool containsPoint(CoordXY xy) const;
 		bool containsPoint(Point p) const;
@@ -162,6 +165,8 @@ namespace lapis {
 
 		bool overlapsExtent(const Extent& e) const override;
 		bool overlapsExtentSameCrs(const Extent& e) const override;
+	protected:
+		void _cacheBoundingBox() const override;
 	private:
         std::vector<Polygon> _polygons;
 		void _sharedConstructorFromGdal(const OGRGeometry& geom, const CoordRef& crs);

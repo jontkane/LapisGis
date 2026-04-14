@@ -61,6 +61,10 @@ namespace lapis {
 		bool strictContains(const coord_t x, const coord_t y) const {
 			return (x > _xmin) && (x < _xmax) && (y > _ymin) && (y < _ymax);
 		}
+        //like contains, but only the left and bottom edges count, not the right and top
+		bool containsHalfOpen(const coord_t x, const coord_t y) const {
+			return (x >= _xmin) && (x < _xmax) && (y >= _ymin) && (y < _ymax);
+        }
 
 		//functions for modifying the crs
 		void setZUnits(LinearUnit zUnits);
