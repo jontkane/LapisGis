@@ -36,8 +36,4 @@ namespace lapis {
 		initialized = true;
 		return true;
     }
-
-#ifdef LAPISGIS_AUTO_INIT
-	static bool lapisGisAutoInit = lapisGisInit("");
-#endif
 }

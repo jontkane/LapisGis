@@ -14,6 +14,7 @@ namespace lapis {
 	template<typename T>
 	class MultiBandRaster : public Alignment {
 	public:
+		MultiBandRaster();
 		MultiBandRaster(const std::string& filename);
 		MultiBandRaster(const std::string& filename, const Extent& e, SnapType snap);
 		MultiBandRaster(const Alignment& a, band_t nBands);
@@ -66,6 +67,8 @@ namespace lapis {
 			_bands[i - 1] = Raster<T>(filename, i);
 		}
 	}
+	template<typename T>
+    inline MultiBandRaster<T>::MultiBandRaster() : Alignment(), _bands() {}
 	template<typename T>
 	inline MultiBandRaster<T>::MultiBandRaster(const std::string& filename, const Extent& e, SnapType snap)
 	{

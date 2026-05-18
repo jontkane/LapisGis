@@ -15,8 +15,6 @@ function(copy_proj_db_after_build target)
     )
 endfunction()
 
-option(LAPISGIS_AUTO_INIT "Call lapisGisInit before main" ON)
-
 set(LAPISGIS_DIR ${CMAKE_CURRENT_LIST_DIR})
 
 file(GLOB LAPISGIS_SOURCES
@@ -62,10 +60,6 @@ set(LAPISGIS_EXTERNAL_LINKS
 target_include_directories(LapisGis PUBLIC ${LAPISGIS_EXTERNAL_INCLUDES})
 target_link_libraries(LapisGis PUBLIC ${LAPISGIS_EXTERNAL_LINKS})
 target_precompile_headers(LapisGis PRIVATE ${LAPISGIS_DIR}/src/gis_pch.hpp)
-
-if(LAPISGIS_AUTO_INIT)
-    target_compile_definitions(LapisGis PRIVATE LAPISGIS_AUTO_INIT)
-endif()
 
 set(LAPISGIS_INCLUDES
 	${LAPISGIS_EXTERNAL_INCLUDES}

@@ -1629,11 +1629,11 @@ namespace lapis {
 
 	//azimuth and elevation should both be in degrees
 	template<class T>
-	inline Raster<T> hillshadeVisualization(const Raster<T>& r, double azimuth, double elevation) {
+	inline Raster<metric_t> hillshadeVisualization(const Raster<T>& r, double azimuth, double elevation) {
 		azimuth = (360 - azimuth + 90) * M_PI / 180.0;
 		elevation = (90 - elevation) * M_PI / 180.0;
 
-		Raster<T> hillshade((Alignment)r);
+		Raster<metric_t> hillshade((Alignment)r);
 		for (rowcol_t col = 0; col < r.ncol(); ++col) {
 			rowcol_t colleft = std::max(col - 1, 0);
 			rowcol_t colright = std::min(col + 1, r.ncol() - 1);
@@ -1664,7 +1664,7 @@ namespace lapis {
 				double slopeMagnitude = std::atan(std::sqrt(slopeX * slopeX + slopeY * slopeY));
                 double hillshadeValue = 255.0 * (std::cos(elevation) * std::cos(slopeMagnitude) + std::sin(elevation) * std::sin(slopeMagnitude) * std::cos(azimuth - aspect));
 				hillshadeValue = std::max(hillshadeValue, 0.0);
-                hillshade.atRCUnsafe(row, col).value() = static_cast<T>(hillshadeValue);
+                hillshade.atRCUnsafe(row, col).value() = static_cast<metric_t>(hillshadeValue);
 				hillshade.atRCUnsafe(row, col).has_value() = true;
 			}
 		}
