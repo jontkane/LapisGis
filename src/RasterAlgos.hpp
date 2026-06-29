@@ -1504,6 +1504,12 @@ namespace lapis {
 			}
         }
 
+		for (cell_t cell : CellIterator(parents)) {
+			if (parents[cell].has_value()) {
+				parents[cell].value() = findAncestor(cell);
+			}
+		}
+
         return parents;
 	}
 
