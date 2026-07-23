@@ -225,9 +225,15 @@ namespace lapis {
 			}
 			return;
 		}
+
+		lazperf::InputCb cb = [&](unsigned char* buf, size_t n) {
+			_ifs->read((char*)buf, n);
+			if (_ifs->gcount() != n) {
+				throw InvalidLasFileException("Unable to read as much data as expected");
+			}
+			};
 		
 		if (!_decompressor) {
-			lazperf::InputCb cb = [&](unsigned char* buf, size_t n) { _ifs->read((char*)buf, n); };
 			_decompressor = lazperf::build_las_decompressor(cb, header.PointFormat(), header.extraBytes());
 			_currentChunk = _chunks.data();
 			_pointInChunk = 0;
@@ -236,7 +242,6 @@ namespace lapis {
 			throw InvalidLasFileException("Error with compression information");
         }
 		if (_pointInChunk == _currentChunk->count) {
-			lazperf::InputCb cb = [&](unsigned char* buf, size_t n) { _ifs->read((char*)buf, n); };
 			_decompressor = lazperf::build_las_decompressor(cb, header.PointFormat(), header.extraBytes());
             _currentChunk++;
 			_pointInChunk = 0;
